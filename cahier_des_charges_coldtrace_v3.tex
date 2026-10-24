@@ -1,0 +1,484 @@
+% =====================================================================
+%  Module      : Cloud of Things
+%  Projet      : ColdTrace — Supervision intelligente de la chaîne du froid
+%  Document    : Cahier des charges (Scope Statement)
+%  Équipe      : ColdTrace Team
+%  Création    : 23/10/2026   Dernière modification : 24/10/2026
+%  Version     : 1.0
+% =====================================================================
+\documentclass[11pt,a4paper]{article}
+
+% ---------- Encodage, langue, polices ----------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+% ---------- Mise en page ----------
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{titlesec}
+\usepackage{graphicx}
+\usepackage{tabularx}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{needspace}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc}
+\usepackage{pgfgantt}
+\usepackage[hidelinks]{hyperref}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.5em}
+\setlist{itemsep=1pt,topsep=3pt}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+
+% ---------- Couleurs ----------
+\definecolor{ctblue}{HTML}{1F3A5F}
+\definecolor{ctcyan}{HTML}{2A9DB8}
+\definecolor{ctlight}{HTML}{EAF4F8}
+\definecolor{ctgrey}{HTML}{5C6670}
+
+% ---------- Titres : seuls les grands titres sont en couleur ----------
+\let\oldsection\section
+\renewcommand{\section}{\Needspace{10\baselineskip}\oldsection}
+\titleformat{\section}{\Large\bfseries\color{ctblue}}{\thesection}{0.7em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.7em}{}
+
+% ---------- Tableaux (sans couleur) ----------
+\newcommand{\tete}[1]{\textbf{#1}}
+
+% ---------- Encadré (texte simple) ----------
+\newcommand{\encadre}[1]{\par\textit{#1}\par}
+
+% ---------- Boîtes du diagramme de déploiement ----------
+\newcommand{\artbox}[1]{\fcolorbox{ctgrey}{white}{\parbox{2.7cm}{\centering\scriptsize #1}}}
+\newcommand{\envbox}[1]{\fcolorbox{ctcyan}{ctlight}{\parbox{3.0cm}{\centering\scriptsize #1}}}
+
+\begin{document}
+
+% =====================================================================
+% PAGE DE GARDE
+% =====================================================================
+\begin{titlepage}
+\centering
+\vspace*{1.5cm}
+
+% ---- Logo SUP'COM : déposer le fichier logo_supcom.png à côté du .tex ----
+\IfFileExists{logo_supcom.png}{%
+  \includegraphics[width=4cm]{logo_supcom.png}%
+}{%
+  \framebox[4cm][c]{\rule{0pt}{1.5cm}\raisebox{0.6cm}{\small Logo SUP'COM}}%
+}
+
+\vspace{1cm}
+{\Large\bfseries École Supérieure des Communications de Tunis}
+
+\vspace{1.5cm}
+\rule{\textwidth}{0.6pt}\\[0.35cm]
+{\huge Cahier des charges}\\[0.2cm]
+\rule{\textwidth}{0.6pt}
+
+\vspace{1.2cm}
+{\large ColdTrace : Supervision de la chaîne du froid}\\[0.2cm]
+Projet Cloud of Things
+
+\vspace{1.2cm}
+\textit{Réalisé par :}\\
+Khalil Hedhili, Oussema Kard, Yessine Abdedayem
+% , Prénom Nom   % <-- ajouter un membre ici
+
+\vspace{0.8cm}
+\textit{Encadré par :}\\
+Dr. Ing. Mohamed-Bécha Kaâniche
+
+\vfill
+\textit{Année universitaire :}\\
+\textbf{2026-2027}
+
+\vspace{0.5cm}
+{\small Dernière modification : 24 octobre 2026 \quad|\quad Last modification: October 24, 2026}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% =====================================================================
+\section{Concept}
+% =====================================================================
+
+\subsection{Contexte}
+Les produits laitiers, les produits surgelés et de nombreux médicaments doivent rester
+dans une plage de température contrôlée, de l'entrepôt jusqu'au client. Beaucoup d'acteurs
+de la chaîne du froid utilisent encore des relevés manuels ou des enregistreurs consultés
+après coup. Une rupture de température peut donc n'être découverte qu'à la livraison,
+lorsque la marchandise est déjà perdue.
+
+\subsection{Problématique}
+\encadre{Comment détecter rapidement une anomalie de température ou d'humidité, alerter
+immédiatement la bonne personne et garder une trace exploitable de l'incident ?}
+
+\subsection{Ambitions}
+Développer une solution \textbf{Cloud of Things de supervision de la chaîne du froid}
+utilisant \textbf{Jakarta EE 11 \& Node-RED / MQTT}. Des capteurs connectés mesurent la
+température, l'humidité et l'ouverture des portes ; une passerelle IoT transmet les mesures
+au cloud, qui les stocke, les analyse et déclenche les alertes.
+
+La solution fournit :
+\begin{itemize}
+  \item la \textbf{visualisation des données en temps réel} ;
+  \item l'\textbf{historique}, des \textbf{analytiques} et des \textbf{indicateurs de performance} :
+        temps passé hors plage, nombre d'incidents, délai moyen de réaction à une alerte ;
+  \item des \textbf{alertes et notifications} pour chaque anomalie ;
+  \item une \textbf{interface de surveillance et de configuration}.
+\end{itemize}
+
+Deux applications \textbf{PWA} sont développées :
+\begin{itemize}
+  \item \textbf{front-office} : tableau de bord temps réel, historique, réception et acquittement des alertes ;
+  \item \textbf{back-office} : gestion des capteurs, des sites, des seuils et des utilisateurs.
+\end{itemize}
+La prédiction n'est pas retenue en version 1 : les alertes reposent sur des règles
+mesurables. Elle pourra être étudiée si le temps et les données le permettent.
+
+% =====================================================================
+\section{Clients, besoins et objectifs}
+% =====================================================================
+
+\subsection{Clients et utilisateurs}
+\begin{tabularx}{\textwidth}{@{}l L@{}}
+\toprule
+\tete{Client cible} & \tete{Usage principal} \\
+\midrule
+Distributeurs alimentaires, laiteries & Suivi des chambres froides et des quais \\
+Pharmacies, grossistes & Conservation des médicaments thermosensibles \\
+Transporteurs frigorifiques & Surveillance des camions pendant la livraison \\
+\bottomrule
+\end{tabularx}
+
+Trois profils utilisent la solution : le \textbf{responsable qualité} (alertes, analyse,
+rapports), le \textbf{chauffeur ou opérateur} (alertes de son véhicule ou de sa zone) et
+l'\textbf{administrateur} (configuration dans le back-office).
+
+\subsection{Besoins fonctionnels}
+\begin{tabularx}{\textwidth}{@{}l L l@{}}
+\toprule
+\tete{ID} & \tete{Besoin} & \tete{Priorité} \\
+\midrule
+EF-01 & Mesurer en continu la température, l'humidité et l'ouverture de porte & Haute \\
+EF-02 & Afficher les mesures en temps réel & Haute \\
+EF-03 & Alerter en cas de dépassement de seuil : froid 0--4\,°C, surgelé $\le -18$\,°C, humidité 50--70\,\% & Haute \\
+EF-04 & Notifier le responsable qualité et le chauffeur concerné & Haute \\
+EF-05 & Acquitter et commenter une alerte & Moyenne \\
+EF-06 & Conserver l'historique des mesures et des incidents & Haute \\
+EF-07 & Afficher les KPI et exporter un rapport de conformité & Moyenne \\
+EF-08 & Gérer capteurs, sites, seuils et utilisateurs & Haute \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Besoins non fonctionnels}
+\begin{itemize}
+  \item \textbf{Réactivité} : une alerte s'affiche moins de 10 secondes après la mesure ;
+  \item \textbf{Sécurité} : MQTTS et HTTPS (TLS), accès par rôle, secrets hors des dépôts ;
+  \item \textbf{Fiabilité} : la passerelle garde les mesures en mémoire en cas de coupure réseau ;
+  \item \textbf{Ergonomie} : PWA installables sur mobile et simples à utiliser.
+\end{itemize}
+
+\subsection{Occasions d'utilisation}
+\begin{itemize}
+  \item \textbf{Transport} : surveillance pendant la livraison, alerte au chauffeur ;
+  \item \textbf{Stockage} : suivi permanent des chambres froides ;
+  \item \textbf{Audit qualité} : consultation de l'historique et des incidents lors d'un contrôle.
+\end{itemize}
+
+\subsection{Limites (hors périmètre)}
+La solution \textbf{surveille et informe} ; elle ne remplace ni l'équipement frigorifique
+ni les procédures de conformité. Sont exclus : le réglage du groupe froid, la gestion
+complète de flotte, la facturation, la certification réglementaire, les protocoles autres
+que MQTT (CoAP, AMQP) et la prédiction par IA.
+
+% =====================================================================
+\section{Technologies choisies}\label{sec:techno}
+% =====================================================================
+Les technologies retenues couvrent la partie logicielle et la partie matérielle du projet.
+
+\subsection{Partie logicielle}
+
+\textbf{Middleware}
+\begin{itemize}
+  \item \textbf{WildFly} : serveur d'applications open source compatible Jakarta EE 11, qui héberge l'API REST.
+  \item \textbf{Mosquitto} : broker MQTT léger qui reçoit les mesures de la passerelle et les distribue au serveur ; configuré en MQTTS (TLS, port 8883).
+  \item \textbf{Jakarta REST (JAX-RS)} : API Java pour exposer les services web REST consommés par les PWA.
+\end{itemize}
+
+\textbf{Back-end}
+\begin{itemize}
+  \item \textbf{Jakarta EE 11} : CDI, Jakarta REST, Jakarta WebSocket (envoi des mesures et des alertes en temps réel) et Jakarta Security (authentification par rôle).
+  \item \textbf{MongoDB} : base de données NoSQL orientée documents, adaptée aux séries de mesures, aux incidents et à la configuration.
+  \item \textbf{MQTT} : protocole publish/subscribe léger utilisé entre la passerelle et le cloud.
+\end{itemize}
+
+\textbf{Front-end}
+\begin{itemize}
+  \item \textbf{PWA (HTML5, CSS3, JavaScript)} : deux applications web installables sur mobile, avec mode hors ligne (Service Worker) et notifications push.
+  \item \textbf{Chart.js} : graphiques temps réel et historiques du tableau de bord.
+\end{itemize}
+
+\textbf{Intégration IoT}
+\begin{itemize}
+  \item \textbf{Node-RED} : outil de programmation par flux installé sur la passerelle ; il collecte les mesures des capteurs, les met en forme, les garde en mémoire en cas de coupure et les publie sur le broker.
+  \item \textbf{Arduino IDE / C++} : programmation du firmware des ESP32.
+\end{itemize}
+
+\textbf{Outils}
+\begin{itemize}
+  \item \textbf{GitHub} : versionnement du code et déploiement sur le cloud (\texttt{git clone} puis \texttt{git pull}).
+  \item \textbf{Postman} : collection de tests de l'API REST.
+  \item \textbf{Cloud IaaS (Ubuntu Linux)} : hébergement du broker, du serveur et de la base de données.
+\end{itemize}
+
+\subsection{Partie matérielle}
+\begin{tabularx}{\textwidth}{@{}l L@{}}
+\toprule
+\tete{Composant} & \tete{Rôle} \\
+\midrule
+Raspberry Pi 4 & Passerelle IoT (Node-RED) \\
+ESP32 (1 à 2) & Microcontrôleurs Wi-Fi reliés aux capteurs \\
+DS18B20 (sonde étanche) & Température, y compris en surgelé (jusqu'à $-55$\,°C) \\
+DHT22 & Température et humidité de l'air \\
+Capteur magnétique de porte (reed) & Détection d'ouverture de porte \\
+Buzzer et LED & Actionneurs : alerte locale en cas d'anomalie \\
+Capteurs simulés & Script qui complète la flotte réelle pour les tests \\
+\bottomrule
+\end{tabularx}
+
+% =====================================================================
+\section{Modèle commercial}
+% =====================================================================
+
+\subsection{Stratégie de commercialisation}
+\begin{itemize}
+  \item \textbf{Étude de marché} : les PME de la chaîne du froid (laiteries, distributeurs,
+        pharmacies, transporteurs) sont peu équipées en supervision connectée ; les solutions
+        existantes sont souvent consultées après coup ou trop coûteuses pour elles.
+  \item \textbf{Différenciation} : traçabilité complète de chaque incident (horodatage,
+        acquittement, commentaire), utile lors d'un audit, et abonnement sans investissement logiciel.
+  \item \textbf{Jalons} : bêta-test avec un client pilote au T1 2027, lancement au T2 2027.
+\end{itemize}
+
+\subsection{Politique marketing (4 P)}
+\begin{tabularx}{\textwidth}{@{}l L@{}}
+\toprule
+\tete{Politique} & \tete{Choix} \\
+\midrule
+Produit & Kit capteurs ESP32, passerelle Raspberry Pi, plateforme cloud et deux PWA \\
+Prix & Abonnement de 8 à 15\,€ par capteur et par mois selon le volume ; matériel vendu ou loué \\
+Communication & Démonstration, vidéo, dossier de presse, LinkedIn et salons professionnels \\
+Distribution & Vente directe aux PME et partenariats avec des frigoristes et logisticiens \\
+\bottomrule
+\end{tabularx}
+
+\textit{Le prix, le client pilote et les dates de lancement sont des hypothèses de travail à valider.}
+
+% =====================================================================
+\section{Livrables}
+% =====================================================================
+\begin{tabularx}{\textwidth}{@{}l L@{}}
+\toprule
+\tete{Livrable} & \tete{Contenu} \\
+\midrule
+Cahier des charges & Le présent document \\
+Cahier conceptuel & Besoins, cas d'utilisation, diagrammes UML, patrons de conception \\
+Codes sources & Dépôts GitHub : API REST, PWA front-office et back-office, passerelle IoT \\
+Déploiement & API REST sur Cloud IaaS, testable avec Postman ; PWA installées sur nos téléphones \\
+Documentation & Documentation technique et manuel utilisateur \\
+Communication & Supports marketing, dossier de presse, campagne publicitaire \\
+Vidéos & Une vidéo de présentation de moins de 5 minutes par livrable \\
+\bottomrule
+\end{tabularx}
+
+% =====================================================================
+\section{Contraintes}
+% =====================================================================
+
+\subsection{Temps, argent, objectifs}
+\begin{itemize}
+  \item \textbf{Temps} : livraison finale fin janvier 2027, en parallèle des autres modules ;
+  \item \textbf{Argent} : matériel limité (1 Raspberry Pi, 1 à 2 ESP32), complété par des capteurs simulés ;
+  \item \textbf{Objectifs} : priorité aux alertes fiables et au temps réel.
+\end{itemize}
+
+\subsection{Méthodologie : eXtreme Programming}
+Itérations de deux semaines terminées par une démonstration, \textit{user stories} issues
+des besoins EF-01 à EF-08, programmation en binôme sur les parties critiques, tests continus
+et intégration régulière sur GitHub. Le déploiement sur le cloud se fait uniquement depuis
+GitHub (\texttt{git clone} puis \texttt{git pull}).
+
+\subsection{Contraintes technologiques}
+Le module impose Jakarta EE 11 pour le serveur, Node-RED et MQTT pour l'IoT, deux PWA
+pour les interfaces et un déploiement sur Cloud IaaS depuis GitHub. Le détail des
+technologies est donné dans la section~\ref{sec:techno}.
+
+\subsection{Estimation des charges (CoCoMo+)}
+Les charges sont estimées par phase et par rôle, en \textbf{hommes-jours} (h-j).
+
+\begin{tabularx}{\textwidth}{@{}L l c c c c@{}}
+\toprule
+\tete{Phase} & \tete{Période} & \tete{Front} & \tete{Middleware} & \tete{Back / IoT} & \tete{Total} \\
+\midrule
+Cahier des charges & jusqu'au 24/10/2026 & 1 & 1 & 1 & 3 \\
+Cahier conceptuel & 25/10 -- 07/11/2026 & 3,5 & 4,5 & 4 & 12 \\
+Passerelle IoT \& protocoles & 08/11 -- 21/11/2026 & 0 & 2 & 13 & 15 \\
+API REST \& middleware & 22/11 -- 12/12/2026 & 0 & 15 & 5 & 20 \\
+PWA, intégration \& tests & 13/12/2026 -- 31/01/2027 & 18 & 5 & 2 & 25 \\
+\midrule
+\textbf{Total} & & \textbf{22,5} & \textbf{27,5} & \textbf{25} & \textbf{75} \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Planning (diagramme de Gantt)}
+\begin{center}
+\begin{ganttchart}[
+    time slot format=isodate,
+    time slot unit=day,
+    x unit=0.085cm,
+    y unit chart=0.55cm,
+    vgrid=false,
+    title height=1,
+    title label font=\small,
+    bar/.style={fill=gray!40,draw=black},
+    bar height=0.5,
+    bar label font=\small,
+    milestone/.style={fill=black},
+    milestone label font=\small\itshape
+  ]{2026-10-12}{2027-01-31}
+  \gantttitlecalendar{month=shortname} \\
+  \ganttbar{Cahier des charges}{2026-10-12}{2026-10-24} \\
+  \ganttbar{Cahier conceptuel}{2026-10-25}{2026-11-07} \\
+  \ganttbar{Passerelle IoT}{2026-11-08}{2026-11-21} \\
+  \ganttbar{API REST \& middleware}{2026-11-22}{2026-12-12} \\
+  \ganttbar{PWA, intégration \& tests}{2026-12-13}{2027-01-31} \\
+  \ganttmilestone{Démonstration finale}{2027-01-31}
+\end{ganttchart}
+\end{center}
+
+\newpage
+% =====================================================================
+\section{Diagramme de déploiement}
+% =====================================================================
+
+% ---- Pseudo-3D UML node macro ----
+\newcommand{\umlnode}[3]{% name, position, content
+  \node[node3d] (#1) at #2 {#3};
+  \draw[ctblue,thick,fill=ctlight!50]
+    (#1.north west) -- ++(0.25,0.25) -- ([xshift=0.25cm,yshift=0.25cm]#1.north east) -- (#1.north east) -- cycle;
+  \draw[ctblue,thick,fill=ctlight!50]
+    (#1.north east) -- ++(0.25,0.25) -- ([xshift=0.25cm,yshift=0.25cm]#1.south east) -- (#1.south east) -- cycle;
+}
+
+\begin{center}
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  font=\footnotesize,
+  node3d/.style={draw=ctblue,fill=white,thick,minimum width=#1,inner sep=5pt,align=center},
+  node3d/.default=3.6cm,
+  env/.style={draw=ctcyan,fill=ctlight,rounded corners=2pt,inner sep=4pt,align=center,minimum width=3.0cm},
+  art/.style={draw=ctgrey,fill=white,inner sep=3pt,align=center,font=\scriptsize,minimum width=2.6cm},
+  link/.style={thick,ctblue},
+  lab/.style={font=\scriptsize\itshape,fill=white,inner sep=1.5pt,text=ctgrey}
+]
+% Capteurs
+\umlnode{esp}{(0,0)}{%
+  \guillemotleft device\guillemotright\\\textbf{ESP32 (1..n)}\\[3pt]
+  \artbox{\guillemotleft artifact\guillemotright\\firmware.ino}\\[2pt]
+  \artbox{Capteurs T° / HR / porte}}
+
+\umlnode{sim}{(0,-4.3)}{%
+  \guillemotleft device\guillemotright\\\textbf{Poste de simulation}\\[3pt]
+  \artbox{\guillemotleft artifact\guillemotright\\sensor-simulator}}
+
+% Passerelle
+\umlnode{gw}{(5.2,-2.1)}{%
+  \guillemotleft device\guillemotright\\\textbf{Raspberry Pi}\\\textit{Passerelle IoT}\\[3pt]
+  \envbox{\guillemotleft executionEnvironment\guillemotright\\Node-RED}\\[2pt]
+  \artbox{\guillemotleft artifact\guillemotright\\flows.json}\\[2pt]
+  \artbox{Tampon local}}
+
+% Cloud
+\node[draw=ctblue,dashed,thick,rounded corners=4pt,minimum width=5.4cm,minimum height=9.4cm,
+      label={[font=\footnotesize\bfseries,text=ctblue]above:\guillemotleft device\guillemotright{} Cloud IaaS — Ubuntu Linux}]
+      (cloud) at (11.0,-2.1) {};
+\node[env,minimum width=4.4cm] (broker) at (11.0,1.3) {\guillemotleft executionEnvironment\guillemotright\\\textbf{Broker MQTT}\\(Mosquitto, port 8883)};
+\node[env,minimum width=4.4cm] (wf) at (11.0,-1.6) {\guillemotleft executionEnvironment\guillemotright\\\textbf{WildFly — Jakarta EE 11}\\[2pt]
+  \artbox{\guillemotleft artifact\guillemotright\\coldtrace-api.war}\\[1pt]
+  \artbox{PWA statiques (HTTPS 443)}};
+\node[env,minimum width=4.4cm] (db) at (11.0,-5.1) {\guillemotleft executionEnvironment\guillemotright\\\textbf{MongoDB}\\[2pt]
+  \artbox{mesures \textbullet{} incidents \textbullet{} config}};
+
+% Clients
+\umlnode{phone}{(16.6,0.2)}{%
+  \guillemotleft device\guillemotright\\\textbf{Smartphone}\\[3pt]
+  \artbox{PWA front-office}}
+\umlnode{pc}{(16.6,-4.3)}{%
+  \guillemotleft device\guillemotright\\\textbf{Poste administrateur}\\[3pt]
+  \artbox{PWA back-office}}
+
+% Liens
+\draw[link] (esp.east) -- node[lab,above,sloped]{Wi-Fi / MQTT} (gw.west);
+\draw[link] (sim.east) -- node[lab,below,sloped]{MQTT} (gw.west);
+\draw[link] (gw.east) -- node[lab,above,sloped]{MQTTS (TLS) :8883} (broker.west);
+\draw[link] (broker.south) -- node[lab,right]{MQTT (abonnement)} (wf.north);
+\draw[link] (wf.south) -- node[lab,right]{driver MongoDB} (db.north);
+\draw[link] (wf.east) -- node[lab,above,sloped]{HTTPS / WebSocket} (phone.west);
+\draw[link] (wf.east) -- node[lab,below,sloped]{HTTPS :443} (pc.west);
+\end{tikzpicture}}%
+
+
+{\small Figure 1 — Diagramme UML de déploiement de ColdTrace}
+\end{center}
+
+Les mesures suivent le chemin capteur $\rightarrow$ passerelle $\rightarrow$ broker MQTT
+$\rightarrow$ API Jakarta EE $\rightarrow$ MongoDB, puis sont affichées dans les PWA.
+Seul MQTT (avec TLS) est utilisé en version 1 ; la passerelle conserve les mesures en cas
+de coupure réseau.
+
+% =====================================================================
+\section{Hypothèses}
+% =====================================================================
+
+\subsection{Mobilisation des équipes}
+\begin{tabularx}{\textwidth}{@{}l l L@{}}
+\toprule
+\tete{Équipe} & \tete{Période} & \tete{Travail} \\
+\midrule
+Back-end / IoT & 08/11 -- 21/11/2026 & ESP32, simulateur, Node-RED, broker MQTT \\
+Middleware & 22/11 -- 12/12/2026 & API REST, alertes, MongoDB, déploiement cloud \\
+Front-end & 13/12/2026 -- 31/01/2027 & PWA front-office et back-office \\
+Toute l'équipe & octobre et janvier & Cahiers, tests, documentation, vidéos \\
+\bottomrule
+\end{tabularx}
+
+\subsection{Hypothèses de déroulement}
+\begin{itemize}
+  \item des capteurs simulés complètent le matériel disponible ;
+  \item une instance Cloud IaaS est accessible pendant toute la durée du projet ;
+  \item une courte formation permet au client pilote de participer aux bêta-tests ;
+  \item le planning suit les dates du module et les dépendances techniques :
+        la passerelle précède l'API, qui précède les PWA.
+\end{itemize}
+
+\subsection{Risques}
+\begin{tabularx}{\textwidth}{@{}L l L@{}}
+\toprule
+\tete{Risque} & \tete{Niveau} & \tete{Réponse prévue} \\
+\midrule
+Matériel indisponible ou en panne & Élevé & Capteurs simulés prêts dès novembre \\
+Intégration capteurs $\rightarrow$ cloud difficile & Élevé & Tester le flux complet le plus tôt possible \\
+Prise en main de Jakarta EE 11 & Moyen & Travail en binôme, prototype minimal d'abord \\
+Accès au Cloud IaaS & Moyen & Provisionner l'instance dès le début \\
+Charge des autres modules & Moyen & Marge dans le planning, priorisation des tâches \\
+\bottomrule
+\end{tabularx}
+
+\end{document}
