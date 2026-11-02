@@ -38,7 +38,7 @@ Deux applications PWA sont prévues :
 ├── api-rest/                       # À venir : Jakarta EE 11
 ├── pwa-front-office/               # À venir
 ├── pwa-back-office/                # À venir
-├── gateway-iot/                    # À venir : Node-RED, flows, firmware ESP32
+├── gateway-iot/                    # Prototype fonctionnel : Node-RED, brokers MQTT, simulateur
 └── docs/                           # À venir : documentation technique, manuel, vidéos
 ```
 

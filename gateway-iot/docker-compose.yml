@@ -2,7 +2,8 @@
 #   site-broker  : Mosquitto on the site, where the ESP32 sensors publish (plain MQTT)
 #   cloud-broker : stand-in for the cloud Mosquitto, MQTTS only, login required
 #   node-red     : the gateway
-#   simulator    : fake sensors (replace with the real ESP32s later)
+#   simulator    : fake sensors and localhost-only fault control API
+#   mongo        : local database for the backend
 #
 # Before the first start:  cp .env.example .env   and   ./scripts/gen-certs.sh
 # Start:                    docker compose up -d
@@ -66,21 +67,40 @@ services:
       - ./certs/ca.crt:/certs/ca.crt:ro        # only the CA certificate, never the keys
     restart: unless-stopped
 
+  mongo:
+    image: mongo:7
+    ports:
+      - "127.0.0.1:27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_APP_USER: ${MONGO_APP_USER}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
+      MONGO_DB: ${MONGO_DB:-coldtrace}
+    volumes:
+      - mongo-data:/data/db
+      - ./mongo/init-app-user.sh:/docker-entrypoint-initdb.d/init-app-user.sh:ro
+    restart: unless-stopped
+
   simulator:
     image: node:22-alpine
     depends_on: [site-broker]
     working_dir: /app
+    ports:
+      - "127.0.0.1:${SIM_CONTROL_PORT:-4000}:${SIM_CONTROL_PORT:-4000}"
     environment:
       BROKER_URL: mqtt://site-broker:1883
-      SITE_ID: ${SITE_ID}
-      SIM_SENSORS: ${SIM_SENSORS}
       SIM_INTERVAL_MS: ${SIM_INTERVAL_MS}
       SIM_BAD_RATE: ${SIM_BAD_RATE}
+      SIM_RANDOM_DOOR: ${SIM_RANDOM_DOOR:-false}
+      SIM_FAULTS: ${SIM_FAULTS:-}
+      SIM_CONTROL_PORT: ${SIM_CONTROL_PORT:-4000}
     volumes:
       - ./simulator:/app
-    command: sh -c "npm install --no-audit --no-fund && node fake-sensors.js"
+    command: sh -c "npm install --no-audit --no-fund && npm start"
     restart: unless-stopped
 
 volumes:
   site-data:
   cloud-data:
+  mongo-data:

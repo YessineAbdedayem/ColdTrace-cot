@@ -1,0 +1,12 @@
+[
+  { "siteId": "site01", "siteName": "cold room", "sensorId": "S01", "profile": "cold" },
+  { "siteId": "site01", "siteName": "cold room", "sensorId": "S02", "profile": "cold" },
+  { "siteId": "site01", "siteName": "cold room", "sensorId": "S03", "profile": "cold" },
+  { "siteId": "site01", "siteName": "cold room", "sensorId": "S04", "profile": "cold" },
+  { "siteId": "site02", "siteName": "freezer room", "sensorId": "S05", "profile": "freezer" },
+  { "siteId": "site02", "siteName": "freezer room", "sensorId": "S06", "profile": "freezer" },
+  { "siteId": "site02", "siteName": "freezer room", "sensorId": "S07", "profile": "freezer" },
+  { "siteId": "site03", "siteName": "refrigerated truck", "sensorId": "S08", "profile": "cold" },
+  { "siteId": "site03", "siteName": "refrigerated truck", "sensorId": "S09", "profile": "cold" },
+  { "siteId": "site03", "siteName": "refrigerated truck", "sensorId": "S10", "profile": "cold" }
+]

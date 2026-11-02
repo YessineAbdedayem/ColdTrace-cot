@@ -21,14 +21,16 @@ see [MESSAGE-FORMAT.md](MESSAGE-FORMAT.md).
 
 | Path | What |
 |---|---|
-| `docker-compose.yml` | the 4 containers: site broker, cloud broker, Node-RED, simulator |
+| `docker-compose.yml` | the 5 containers: site broker, cloud broker, Node-RED, simulator, MongoDB |
 | `.env.example` | settings and passwords (copy to `.env`) |
 | `scripts/gen-certs.sh` | creates the dev CA and the cloud broker's TLS certificate |
+| `scripts/smoke-test.sh` | checks the services, telemetry and MongoDB indexes |
 | `mosquitto/site/` | site broker config |
 | `mosquitto/cloud/` | cloud broker config (TLS only, login, access rules in `acl`) |
+| `mongo/init-app-user.sh` | creates the backend database user, collections and indexes |
 | `node-red/flows.json` | the gateway flow |
 | `node-red/settings.js` | Node-RED settings (disk storage for the buffer) |
-| `simulator/` | fake sensors |
+| `simulator/` | ten fake sensors, fault-control API and model tests |
 | `MESSAGE-FORMAT.md` | topics and JSON format (draft) |
 
 ## Run it
@@ -38,22 +40,74 @@ You need Docker (Docker Desktop on Windows/Mac) and `openssl`
 
 ```bash
 cd gateway-iot
-cp .env.example .env            # then change the two passwords in .env
+cp .env.example .env            # then change the example passwords in .env
 ./scripts/gen-certs.sh          # creates certs/ (never committed)
 docker compose up -d
 ```
 
+MongoDB's init script creates the `coldtrace` database and its app user,
+collections and indexes when the data volume is empty. Init scripts run only
+on the first start with an empty volume; to run them again, use
+`docker compose down -v` (this deletes the local database data).
+
 Open the Node-RED editor at http://localhost:1880. The "Forward or buffer"
 node shows the state, for example `cloud online | buffered: 0`.
 
-Watch what arrives in the "cloud" (as the backend would):
+Watch what arrives in the "cloud" (as the backend would), using the password
+from `.env`:
 
 ```bash
 docker compose exec cloud-broker mosquitto_sub -h cloud-broker -p 8883 \
-  --cafile /mosquitto/certs/ca.crt -u backend -P change-me-backend -t 'coldtrace/#' -v
+  --cafile /mosquitto/certs/ca.crt -u backend -P "$CLOUD_BACKEND_PASSWORD" -t 'coldtrace/#' -v
 ```
 
-(use the backend password from your `.env`). Logs: `docker compose logs -f node-red simulator`.
+The simulator publishes ten sensors from three sites every five seconds.
+Logs: `docker compose logs -f node-red simulator`.
+
+### Control simulator faults
+
+The simulator control API listens on `127.0.0.1:4000` and has no authentication;
+it is intended only for local development. `GET /sensors` lists each sensor's
+site, profile, latest values and active fault. Set a fault on one sensor or all
+sensors at a site with `POST /faults`; `POST /faults/clear` clears all faults.
+Supported faults are `door_open`, `temp_rise`, `silent` and `none`. Random door
+openings are disabled by default; faults can also be set at startup with
+`SIM_FAULTS=S01=door_open,S05=silent`.
+
+curl examples:
+
+```bash
+curl http://localhost:4000/sensors
+curl -X POST http://localhost:4000/faults \
+  -H 'Content-Type: application/json' \
+  -d '{"sensorId":"S01","fault":"door_open"}'
+curl -X POST http://localhost:4000/faults \
+  -H 'Content-Type: application/json' \
+  -d '{"siteId":"site02","fault":"temp_rise"}'
+curl -X POST http://localhost:4000/faults/clear
+```
+
+PowerShell examples:
+
+```powershell
+Invoke-RestMethod -Uri 'http://localhost:4000/sensors'
+Invoke-RestMethod -Method Post -Uri 'http://localhost:4000/faults' `
+  -ContentType 'application/json' -Body '{"sensorId":"S01","fault":"door_open"}'
+Invoke-RestMethod -Method Post -Uri 'http://localhost:4000/faults' `
+  -ContentType 'application/json' -Body '{"siteId":"site02","fault":"temp_rise"}'
+Invoke-RestMethod -Method Post -Uri 'http://localhost:4000/faults/clear'
+```
+
+Run the end-to-end local checks from `gateway-iot/` after the stack is up:
+
+```bash
+./scripts/smoke-test.sh
+```
+
+The smoke test checks that all five services are running, receives telemetry
+from all ten sensor topics through the cloud broker, and verifies MongoDB's
+ping and unique `msgId` index. Simulator model tests run with
+`cd simulator && npm test`.
 
 ## Test a cloud outage
 
@@ -80,7 +134,10 @@ every broken one was rejected.
   sends right away. Otherwise adds the reading to a buffer saved on disk
   (`node-red/context/`). A 1-second timer sends the buffer back in batches of
   `REPLAY_BATCH` when the cloud is back. If the buffer reaches `BUFFER_MAX`
-  (20,000 readings, about 18 hours for 3 sensors every 10 s), the oldest are dropped.
+  the oldest readings are dropped. Capacity time is
+  `BUFFER_MAX / (sensor count / interval in seconds)`: 20,000 readings at ten
+  sensors every 5 s (2 readings/s) lasts about 2.8 hours; at three sensors
+  every 10 s (0.3 readings/s) it lasts about 18.5 hours.
 - **Gateway status**: online/offline messages (MQTT birth and last will) and a
   heartbeat every minute with counters, on `coldtrace/{siteId}/gateway/status`.
 
@@ -126,8 +183,10 @@ docker compose up -d
 ## Security in this setup
 
 - Cloud broker accepts **only TLS** (port 8883) and **only logged-in users**.
-- Each gateway logs in with its **site id as username** and the ACL lets it
-  write only under its own site (`coldtrace/site01/...`). The backend user can read everything.
+- In production, each gateway logs in with its **site id as username** and the
+  ACL lets it write only under its own site. The local development ACL lets the
+  `site01` gateway also write `site02` and `site03` simulator telemetry; the
+  backend user can read everything.
 - Passwords live in `.env`, certificates and keys in `certs/`: both are ignored by git.
 - Node-RED only gets `ca.crt` (to check the broker), never a private key.
 - Ports are opened on `127.0.0.1` only.
@@ -144,3 +203,25 @@ or at least a password on the site broker once real ESP32s are on the network.
 - **Real cloud server**: copy `mosquitto/cloud/` and `certs/` there, run
   `./scripts/gen-certs.sh <server-ip-or-name>` so the certificate matches its
   address, and set `CLOUD_BROKER_HOST` in the gateway's `.env`.
+
+## Connection details for the backend
+
+- **MQTTS**: host `localhost`, port `8883` from the host; use `cloud-broker`,
+  port `8883` from a container on the Compose network. Trust `certs/ca.crt`
+  (mounted in the broker at `/mosquitto/certs/ca.crt`; mount the CA in a
+  separate backend container as well). Username is `backend`;
+  use `CLOUD_BACKEND_PASSWORD` from `.env`. Subscribe to
+  `coldtrace/+/+/telemetry` and `coldtrace/+/gateway/status`.
+- **MongoDB**: host URI `mongodb://localhost:27017/coldtrace`; container URI
+  `mongodb://mongo:27017/coldtrace`. Authenticate with `MONGO_APP_USER` and
+  `MONGO_APP_PASSWORD` from `.env`, using `authSource=coldtrace`, for example
+  `mongodb://<user>:<password>@localhost:27017/coldtrace?authSource=coldtrace`
+  from the host or `mongodb://<user>:<password>@mongo:27017/coldtrace?authSource=coldtrace`
+  from a container.
+  The root credentials are for administration only.
+- **Docker network**: `coldtrace-gateway_default` (the Compose default network).
+  Containers must join this network to resolve `cloud-broker` and `mongo`.
+- **MongoDB collections**: `measurements` is a regular collection with a
+  unique `msgId` index and `{siteId: 1, sensorId: 1, ts: -1}` index; empty
+  collections are also created for `incidents`, `sites`, `sensors`,
+  `thresholds` and `users`.

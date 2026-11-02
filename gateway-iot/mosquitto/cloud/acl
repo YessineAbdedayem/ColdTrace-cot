@@ -6,6 +6,12 @@ pattern write coldtrace/%u/+/telemetry
 pattern write coldtrace/%u/gateway/status
 pattern read  coldtrace/%u/+/cmd
 
+# DEV ONLY: one local gateway (site01) serves the site02 and site03 simulators.
+# In production, each site has its own gateway and matching broker user.
+user site01
+topic write coldtrace/site02/+/telemetry
+topic write coldtrace/site03/+/telemetry
+
 # The backend (WildFly) reads everything and can send commands
 user backend
 topic read  coldtrace/#
