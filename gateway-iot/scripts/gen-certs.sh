@@ -15,22 +15,30 @@ set -euo pipefail
 cd "$(dirname "$0")/../certs"
 DAYS=825
 
-# Names the certificate is valid for. "cloud-broker" is the docker service name.
-SAN="DNS:localhost,DNS:cloud-broker,IP:127.0.0.1"
+openssl_req() {
+  # Git Bash otherwise rewrites OpenSSL's /CN= subject as a Windows path.
+  MSYS2_ARG_CONV_EXCL='/CN=' openssl req "$@"
+}
+
+# Names the certificate is valid for from the host and Docker containers.
+SAN="DNS:localhost,DNS:cloud-broker,DNS:host.docker.internal,IP:127.0.0.1"
 for extra in "$@"; do
   if [[ "$extra" =~ ^[0-9.]+$ ]]; then SAN="$SAN,IP:$extra"; else SAN="$SAN,DNS:$extra"; fi
 done
 
-if [[ ! -f ca.key ]]; then
-  echo "Creating the ColdTrace dev CA..."
-  openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 3650 \
-    -keyout ca.key -out ca.crt -subj "/CN=ColdTrace Dev CA"
-else
+if [[ -f ca.key && -f ca.crt ]]; then
   echo "Reusing existing CA (delete certs/ca.* to start over)."
+elif [[ -e ca.key || -e ca.crt ]]; then
+  echo "Incomplete CA found; remove certs/ca.key and certs/ca.crt, then retry." >&2
+  exit 1
+else
+  echo "Creating the ColdTrace dev CA..."
+  openssl_req -x509 -newkey rsa:2048 -nodes -sha256 -days 3650 \
+    -keyout ca.key -out ca.crt -subj "/CN=ColdTrace Dev CA"
 fi
 
 echo "Creating the cloud broker certificate for: $SAN"
-openssl req -newkey rsa:2048 -nodes -sha256 \
+openssl_req -newkey rsa:2048 -nodes -sha256 \
   -keyout cloud-broker.key -out cloud-broker.csr -subj "/CN=cloud-broker"
 printf "subjectAltName=%s\nextendedKeyUsage=serverAuth\n" "$SAN" > cloud-broker.ext
 openssl x509 -req -in cloud-broker.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
