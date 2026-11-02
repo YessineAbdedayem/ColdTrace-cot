@@ -1,0 +1,6 @@
+{
+    "broker_cloud": {
+        "user": "${CLOUD_GATEWAY_USER}",
+        "password": "${CLOUD_GATEWAY_PASSWORD}"
+    }
+}

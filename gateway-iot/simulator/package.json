@@ -1,0 +1,9 @@
+{
+  "name": "coldtrace-fake-sensors",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Fake ESP32 sensors for testing the ColdTrace gateway",
+  "main": "fake-sensors.js",
+  "scripts": { "start": "node fake-sensors.js" },
+  "dependencies": { "mqtt": "^5.10.0" }
+}

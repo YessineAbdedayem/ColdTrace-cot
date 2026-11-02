@@ -1,0 +1,362 @@
+[
+    {
+        "id": "tab_gateway",
+        "type": "tab",
+        "label": "ColdTrace gateway",
+        "disabled": false,
+        "info": "Sensors (local broker) -> check and clean -> cloud broker over MQTTS.\nWhile the cloud is down, readings are kept on disk and replayed in order when it comes back."
+    },
+    {
+        "id": "c1",
+        "type": "comment",
+        "z": "tab_gateway",
+        "name": "1. Protocol adapters: one per protocol, all go to \"Gateway input\"",
+        "x": 220,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "in_sensors",
+        "type": "mqtt in",
+        "z": "tab_gateway",
+        "name": "Sensors (site broker)",
+        "topic": "coldtrace/+/+/telemetry",
+        "qos": "1",
+        "datatype": "utf8",
+        "broker": "broker_site",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 160,
+        "y": 100,
+        "wires": [
+            [
+                "fn_adapter_mqtt"
+            ]
+        ]
+    },
+    {
+        "id": "fn_adapter_mqtt",
+        "type": "function",
+        "z": "tab_gateway",
+        "name": "MQTT adapter",
+        "func": "// Turns a message from the site broker into the gateway's input format.\n// Each protocol has its own adapter: see \"Adding a protocol\" in README.md.\n// Out: msg.source = { protocol, siteId, sensorId }, msg.payload unchanged\nconst parts = String(msg.topic).split(\"/\");\nconst valid = parts.length === 4 && parts[0] === \"coldtrace\" && parts[3] === \"telemetry\";\nmsg.source = valid ? { protocol: \"mqtt\", siteId: parts[1], sensorId: parts[2] } : { protocol: \"mqtt\" };\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 370,
+        "y": 100,
+        "wires": [
+            [
+                "lnk_out_mqtt"
+            ]
+        ]
+    },
+    {
+        "id": "lnk_out_mqtt",
+        "type": "link out",
+        "z": "tab_gateway",
+        "name": "to gateway input",
+        "mode": "link",
+        "links": [
+            "lnk_gateway_input"
+        ],
+        "x": 515,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "lnk_gateway_input",
+        "type": "link in",
+        "z": "tab_gateway",
+        "name": "Gateway input",
+        "links": [
+            "lnk_out_mqtt"
+        ],
+        "x": 595,
+        "y": 100,
+        "wires": [
+            [
+                "fn_validate"
+            ]
+        ]
+    },
+    {
+        "id": "fn_validate",
+        "type": "function",
+        "z": "tab_gateway",
+        "name": "Check and clean",
+        "func": "// Checks one sensor message and turns it into the standard ColdTrace format.\n// In:  msg.source  = { protocol, siteId, sensorId }, set by the protocol adapter\n//      msg.payload = the sensor's data (JSON text, Buffer or object)\n// Out 1: a clean reading (goes on to the cloud)\n// Out 2: a rejected message, with msg.reason explaining why\n\nconst GATEWAY_ID = env.get(\"GATEWAY_ID\") || \"gw-unknown\";\nconst LIMITS = {\n    temperature: [-40, 85],   // °C, the sensor's physical range\n    humidity:    [0, 100]     // %\n};\nconst ID_RE = /^[A-Za-z0-9_-]{1,32}$/;\n\nfunction reject(reason) {\n    const stats = flow.get(\"stats\") || {};\n    stats.rejected = (stats.rejected || 0) + 1;\n    flow.set(\"stats\", stats);\n    msg.reason = `${(msg.source && msg.source.protocol) || \"unknown\"}: ${reason}`;\n    return [null, msg];\n}\n\nfunction toNumber(v) {\n    if (typeof v === \"number\") return v;\n    if (typeof v === \"string\" && v.trim() !== \"\") return Number(v);\n    return NaN;\n}\n\nfunction toBool(v) {\n    if (v === true || v === 1 || v === \"1\" || v === \"true\" || v === \"open\") return true;\n    if (v === false || v === 0 || v === \"0\" || v === \"false\" || v === \"closed\") return false;\n    return null;\n}\n\n// 1. Source: which site and which sensor\nconst { siteId, sensorId } = msg.source || {};\nif (typeof siteId !== \"string\" || typeof sensorId !== \"string\") return reject(\"no site or sensor id\");\nif (!ID_RE.test(siteId) || !ID_RE.test(sensorId)) return reject(\"bad site or sensor id\");\n\n// 2. Payload must be a JSON object\nlet data = msg.payload;\nif (typeof data === \"string\" || Buffer.isBuffer(data)) {\n    try { data = JSON.parse(data.toString()); } catch (e) { return reject(\"payload is not JSON\"); }\n}\nif (!data || typeof data !== \"object\" || Array.isArray(data)) return reject(\"payload must be a JSON object\");\n\n// 3. Measurements (short names \"temp\", \"hum\", \"door\" are accepted too)\nconst reading = {};\nfor (const [field, alias] of [[\"temperature\", \"temp\"], [\"humidity\", \"hum\"]]) {\n    const raw = data[field] !== undefined ? data[field] : data[alias];\n    if (raw === undefined || raw === null) continue;\n    const n = toNumber(raw);\n    if (!Number.isFinite(n)) return reject(field + \" is not a number\");\n    const [min, max] = LIMITS[field];\n    if (n < min || n > max) return reject(`${field} ${n} outside ${min}..${max}`);\n    reading[field] = Math.round(n * 10) / 10;\n}\nconst rawDoor = data.doorOpen !== undefined ? data.doorOpen : data.door;\nif (rawDoor !== undefined && rawDoor !== null) {\n    const b = toBool(rawDoor);\n    if (b === null) return reject(\"doorOpen must be true or false\");\n    reading.doorOpen = b;\n}\nif (Object.keys(reading).length === 0) return reject(\"no temperature, humidity or doorOpen\");\n\n// 4. Time: use the sensor's time if it looks right, otherwise the gateway's.\n// (An ESP32 without NTP would send a time in 1970.)\nconst now = Date.now();\nlet ts = NaN;\nif (typeof data.ts === \"number\") ts = data.ts < 1e12 ? data.ts * 1000 : data.ts;  // seconds or ms\nelse if (typeof data.ts === \"string\") ts = Date.parse(data.ts);\nlet tsSource = \"sensor\";\nconst FIVE_MIN = 5 * 60 * 1000, SEVEN_DAYS = 7 * 24 * 3600 * 1000;\nif (!Number.isFinite(ts) || ts > now + FIVE_MIN || ts < now - SEVEN_DAYS) {\n    ts = now;\n    tsSource = \"gateway\";\n}\nts = Math.round(ts);\n\nmsg.payload = {\n    v: 1,\n    msgId: `${siteId}-${sensorId}-${ts}`,\n    siteId,\n    sensorId,\n    gatewayId: GATEWAY_ID,\n    ts: new Date(ts).toISOString(),\n    tsSource,\n    ...reading,\n    receivedAt: new Date(now).toISOString()\n};\nmsg.topic = `coldtrace/${siteId}/${sensorId}/telemetry`;\nreturn [msg, null];\n",
+        "outputs": 2,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "outputLabels": [
+            "clean reading",
+            "rejected"
+        ],
+        "x": 740,
+        "y": 100,
+        "wires": [
+            [
+                "fn_buffer"
+            ],
+            [
+                "dbg_rejected"
+            ]
+        ]
+    },
+    {
+        "id": "dbg_rejected",
+        "type": "debug",
+        "z": "tab_gateway",
+        "name": "Rejected",
+        "active": true,
+        "tosidebar": true,
+        "console": true,
+        "tostatus": true,
+        "complete": "reason",
+        "targetType": "msg",
+        "statusVal": "reason",
+        "statusType": "msg",
+        "x": 950,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "c2",
+        "type": "comment",
+        "z": "tab_gateway",
+        "name": "2. Forward to the cloud, or keep while offline",
+        "x": 220,
+        "y": 220,
+        "wires": []
+    },
+    {
+        "id": "inj_replay",
+        "type": "inject",
+        "z": "tab_gateway",
+        "name": "every 1 s",
+        "props": [
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "1",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "2",
+        "topic": "replay",
+        "x": 380,
+        "y": 280,
+        "wires": [
+            [
+                "fn_buffer"
+            ]
+        ]
+    },
+    {
+        "id": "st_cloud",
+        "type": "status",
+        "z": "tab_gateway",
+        "name": "Cloud connection state",
+        "scope": [
+            "out_cloud"
+        ],
+        "x": 390,
+        "y": 320,
+        "wires": [
+            [
+                "fn_buffer"
+            ]
+        ]
+    },
+    {
+        "id": "fn_buffer",
+        "type": "function",
+        "z": "tab_gateway",
+        "name": "Forward or buffer",
+        "func": "// Sends readings to the cloud, or keeps them while the cloud is unreachable.\n// It receives three kinds of messages:\n//   - msg.status        : the cloud MQTT node changed state (connected or not)\n//   - topic \"replay\"    : timer tick, send the next batch of kept readings\n//   - anything else     : a new clean reading\n// The buffer is saved in the \"file\" context store, so it survives a restart.\n// Readings always leave in order: while old ones are waiting, new ones queue behind them.\n\nconst MAX = Number(env.get(\"BUFFER_MAX\")) || 20000;\nconst BATCH = Number(env.get(\"REPLAY_BATCH\")) || 50;\nconst STORE = \"file\";\n\nconst stats = flow.get(\"stats\") || {};\nlet buffer = flow.get(\"buffer\", STORE) || [];\n\nfunction showStatus(online) {\n    node.status({\n        fill: online ? (buffer.length ? \"yellow\" : \"green\") : \"red\",\n        shape: \"dot\",\n        text: (online ? \"cloud online\" : \"cloud offline\") + ` | buffered: ${buffer.length}`\n    });\n}\nfunction bump(name, n) { stats[name] = (stats[name] || 0) + n; flow.set(\"stats\", stats); }\nfunction toMsg(reading, replayed) {\n    return {\n        topic: `coldtrace/${reading.siteId}/${reading.sensorId}/telemetry`,\n        payload: replayed ? { ...reading, replayed: true } : reading\n    };\n}\n\n// 1. Connection state of the cloud broker\nif (msg.status) {\n    const online = msg.status.fill === \"green\";\n    if (online !== flow.get(\"cloudOnline\")) {\n        node.log(online ? `cloud connected, ${buffer.length} readings to replay`\n                        : \"cloud disconnected, buffering readings\");\n    }\n    flow.set(\"cloudOnline\", online);\n    showStatus(online);\n    return null;\n}\n\nconst online = flow.get(\"cloudOnline\") === true;\n\n// 2. Timer: replay a batch of kept readings\nif (msg.topic === \"replay\") {\n    if (online && buffer.length > 0) {\n        const batch = buffer.splice(0, BATCH);\n        flow.set(\"buffer\", buffer, STORE);\n        bump(\"replayed\", batch.length);\n        node.send([batch.map(r => toMsg(r, true))]);\n        if (buffer.length === 0) node.log(\"replay finished\");\n    }\n    showStatus(online);\n    return null;\n}\n\n// 3. New reading\nif (online && buffer.length === 0) {\n    bump(\"forwarded\", 1);\n    showStatus(online);\n    return toMsg(msg.payload, false);\n}\nbuffer.push(msg.payload);\nif (buffer.length > MAX) {\n    // Full: drop the oldest so the newest data is kept\n    const extra = buffer.length - MAX;\n    buffer.splice(0, extra);\n    bump(\"dropped\", extra);\n}\nflow.set(\"buffer\", buffer, STORE);\nshowStatus(online);\nreturn null;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1000,
+        "y": 100,
+        "wires": [
+            [
+                "out_cloud"
+            ]
+        ]
+    },
+    {
+        "id": "out_cloud",
+        "type": "mqtt out",
+        "z": "tab_gateway",
+        "name": "Cloud broker (MQTTS)",
+        "topic": "",
+        "qos": "1",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "broker_cloud",
+        "x": 1240,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "c3",
+        "type": "comment",
+        "z": "tab_gateway",
+        "name": "3. Heartbeat: gateway status every minute",
+        "x": 220,
+        "y": 400,
+        "wires": []
+    },
+    {
+        "id": "inj_hb",
+        "type": "inject",
+        "z": "tab_gateway",
+        "name": "every 60 s",
+        "props": [],
+        "repeat": "60",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "5",
+        "topic": "",
+        "x": 160,
+        "y": 460,
+        "wires": [
+            [
+                "fn_hb"
+            ]
+        ]
+    },
+    {
+        "id": "fn_hb",
+        "type": "function",
+        "z": "tab_gateway",
+        "name": "Gateway status",
+        "func": "// Every minute: tell the cloud the gateway is alive, with a few counters.\n// Sent only when the cloud is reachable (a late heartbeat is useless).\nif (flow.get(\"cloudOnline\") !== true) return null;\nconst buffer = flow.get(\"buffer\", \"file\") || [];\nconst stats = flow.get(\"stats\") || {};\nmsg.topic = env.get(\"GATEWAY_STATUS_TOPIC\");\nmsg.retain = true;\nmsg.payload = {\n    v: 1,\n    gatewayId: env.get(\"GATEWAY_ID\"),\n    siteId: env.get(\"SITE_ID\"),\n    status: \"online\",\n    ts: new Date().toISOString(),\n    buffered: buffer.length,\n    forwarded: stats.forwarded || 0,\n    replayed: stats.replayed || 0,\n    rejected: stats.rejected || 0,\n    dropped: stats.dropped || 0\n};\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 380,
+        "y": 460,
+        "wires": [
+            [
+                "out_status"
+            ]
+        ]
+    },
+    {
+        "id": "out_status",
+        "type": "mqtt out",
+        "z": "tab_gateway",
+        "name": "Cloud: gateway status",
+        "topic": "",
+        "qos": "1",
+        "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "broker_cloud",
+        "x": 620,
+        "y": 460,
+        "wires": []
+    },
+    {
+        "id": "broker_site",
+        "type": "mqtt-broker",
+        "name": "Site broker",
+        "broker": "${SITE_BROKER_HOST}",
+        "port": "${SITE_BROKER_PORT}",
+        "clientid": "${GATEWAY_ID}",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": "30",
+        "cleansession": false,
+        "autoUnsubscribe": false,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthRetain": "false",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closeRetain": "false",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willRetain": "false",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "broker_cloud",
+        "type": "mqtt-broker",
+        "name": "Cloud broker (MQTTS)",
+        "broker": "${CLOUD_BROKER_HOST}",
+        "port": "${CLOUD_BROKER_PORT}",
+        "clientid": "${GATEWAY_ID}",
+        "autoConnect": true,
+        "usetls": true,
+        "protocolVersion": "4",
+        "keepalive": "30",
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "${GATEWAY_STATUS_TOPIC}",
+        "birthQos": "1",
+        "birthRetain": "true",
+        "birthPayload": "{\"v\":1,\"status\":\"online\"}",
+        "birthMsg": {},
+        "closeTopic": "${GATEWAY_STATUS_TOPIC}",
+        "closeQos": "1",
+        "closeRetain": "true",
+        "closePayload": "{\"v\":1,\"status\":\"offline\"}",
+        "closeMsg": {},
+        "willTopic": "${GATEWAY_STATUS_TOPIC}",
+        "willQos": "1",
+        "willRetain": "true",
+        "willPayload": "{\"v\":1,\"status\":\"offline\"}",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": "",
+        "tls": "tls_cloud"
+    },
+    {
+        "id": "tls_cloud",
+        "type": "tls-config",
+        "name": "ColdTrace CA",
+        "cert": "",
+        "key": "",
+        "ca": "/certs/ca.crt",
+        "certname": "",
+        "keyname": "",
+        "caname": "",
+        "servername": "",
+        "verifyservercert": true,
+        "alpnprotocol": ""
+    }
+]

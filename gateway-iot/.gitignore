@@ -1,0 +1,12 @@
+# Secrets and generated files: never commit these
+.env
+certs/*
+!certs/.gitkeep
+# Files Node-RED writes at runtime
+node-red/.config*.json
+node-red/.flows*.backup
+# (flows_cred.json IS committed: it only holds ${ENV} references, no passwords)
+node-red/context/
+node-red/lib/
+node-red/node_modules/
+simulator/node_modules/

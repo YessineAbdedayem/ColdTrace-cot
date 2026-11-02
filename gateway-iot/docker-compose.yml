@@ -1,0 +1,86 @@
+# ColdTrace gateway: everything needed to run and test it on a laptop.
+#   site-broker  : Mosquitto on the site, where the ESP32 sensors publish (plain MQTT)
+#   cloud-broker : stand-in for the cloud Mosquitto, MQTTS only, login required
+#   node-red     : the gateway
+#   simulator    : fake sensors (replace with the real ESP32s later)
+#
+# Before the first start:  cp .env.example .env   and   ./scripts/gen-certs.sh
+# Start:                    docker compose up -d
+name: coldtrace-gateway
+
+services:
+  site-broker:
+    image: eclipse-mosquitto:2.0.20
+    ports:
+      - "127.0.0.1:1883:1883"
+    volumes:
+      - ./mosquitto/site/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - site-data:/mosquitto/data
+    restart: unless-stopped
+
+  cloud-broker:
+    image: eclipse-mosquitto:2.0.20
+    ports:
+      - "127.0.0.1:8883:8883"
+    environment:
+      GW_USER: ${CLOUD_GATEWAY_USER}
+      GW_PASS: ${CLOUD_GATEWAY_PASSWORD}
+      BACKEND_USER: ${CLOUD_BACKEND_USER}
+      BACKEND_PASS: ${CLOUD_BACKEND_PASSWORD}
+    volumes:
+      - ./mosquitto/cloud/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/cloud/acl:/mosquitto/config/acl:ro
+      - ./certs:/mosquitto/certs:ro
+      - cloud-data:/mosquitto/data
+    # Build the password file from .env at each start, then run the broker
+    entrypoint:
+      - sh
+      - -c
+      - |
+        set -e
+        mosquitto_passwd -c -b /mosquitto/passwd "$$GW_USER" "$$GW_PASS"
+        mosquitto_passwd -b /mosquitto/passwd "$$BACKEND_USER" "$$BACKEND_PASS"
+        chown mosquitto:mosquitto /mosquitto/passwd
+        chmod 0700 /mosquitto/passwd
+        exec mosquitto -c /mosquitto/config/mosquitto.conf
+    restart: unless-stopped
+
+  node-red:
+    image: nodered/node-red:4.1
+    depends_on: [site-broker, cloud-broker]
+    ports:
+      - "127.0.0.1:1880:1880"
+    environment:
+      SITE_ID: ${SITE_ID}
+      GATEWAY_ID: ${GATEWAY_ID}
+      SITE_BROKER_HOST: ${SITE_BROKER_HOST}
+      SITE_BROKER_PORT: ${SITE_BROKER_PORT}
+      CLOUD_BROKER_HOST: ${CLOUD_BROKER_HOST}
+      CLOUD_BROKER_PORT: ${CLOUD_BROKER_PORT}
+      CLOUD_GATEWAY_USER: ${CLOUD_GATEWAY_USER}
+      CLOUD_GATEWAY_PASSWORD: ${CLOUD_GATEWAY_PASSWORD}
+      BUFFER_MAX: ${BUFFER_MAX}
+      REPLAY_BATCH: ${REPLAY_BATCH}
+    volumes:
+      - ./node-red:/data                       # flows.json, settings.js, saved buffer
+      - ./certs/ca.crt:/certs/ca.crt:ro        # only the CA certificate, never the keys
+    restart: unless-stopped
+
+  simulator:
+    image: node:22-alpine
+    depends_on: [site-broker]
+    working_dir: /app
+    environment:
+      BROKER_URL: mqtt://site-broker:1883
+      SITE_ID: ${SITE_ID}
+      SIM_SENSORS: ${SIM_SENSORS}
+      SIM_INTERVAL_MS: ${SIM_INTERVAL_MS}
+      SIM_BAD_RATE: ${SIM_BAD_RATE}
+    volumes:
+      - ./simulator:/app
+    command: sh -c "npm install --no-audit --no-fund && node fake-sensors.js"
+    restart: unless-stopped
+
+volumes:
+  site-data:
+  cloud-data:

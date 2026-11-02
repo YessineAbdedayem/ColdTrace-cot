@@ -1,0 +1,12 @@
+# Who can do what on the cloud broker.
+# Each gateway logs in with its site id as username (for example "site01").
+# %u is replaced by that username, so a gateway can only write under
+# its own site and cannot read other sites.
+pattern write coldtrace/%u/+/telemetry
+pattern write coldtrace/%u/gateway/status
+pattern read  coldtrace/%u/+/cmd
+
+# The backend (WildFly) reads everything and can send commands
+user backend
+topic read  coldtrace/#
+topic write coldtrace/+/+/cmd
