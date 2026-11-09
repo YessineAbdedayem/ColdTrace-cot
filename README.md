@@ -35,7 +35,7 @@ Deux applications PWA sont prévues :
 ├── README.md
 ├── livrable1-cahier-des-charges/   # Cahier des charges (PDF + source LaTeX)
 ├── livrable2-cahier-conceptuel/    # À venir
-├── api-rest/                       # À venir : Jakarta EE 11
+├── api-rest/                       # Jakarta EE 11 : ingestion MQTT, alertes, WebSocket
 ├── pwa-front-office/               # À venir
 ├── pwa-back-office/                # À venir
 ├── gateway-iot/                    # Prototype fonctionnel : Node-RED, brokers MQTT, simulateur
@@ -51,6 +51,223 @@ Deux applications PWA sont prévues :
 | Passerelle IoT et protocoles | Prévu 08/11 - 21/11/2026 |
 | API REST et middleware | Prévu 22/11 - 12/12/2026 |
 | PWA, intégration et tests | Prévu 13/12/2026 - 31/01/2027 |
+
+## Tester le système pas à pas
+
+Le simulateur remplace les capteurs ESP32 et Node-RED remplace le Raspberry Pi : aucun matériel n'est nécessaire.
+
+```
+simulateur ──> site-broker ──> node-red (passerelle) ──MQTTS──> cloud-broker ──> api ──> mongo
+(10 capteurs, 3 sites)                                                            └──> WebSocket /ws/alerts
+```
+
+- **Où lancer :** les commandes se lancent depuis `gateway-iot/`.
+- **Shell :** elles sont écrites pour Git Bash. Sous PowerShell, l'API de pannes du simulateur s'appelle avec
+  `Invoke-RestMethod`, comme au test 5.
+- **Plus de détails :** `gateway-iot/README.md` décrit la passerelle et `api-rest/README.md` décrit l'API.
+
+### 0. Démarrer et lancer les vérifications automatiques
+
+La première fois seulement :
+
+```bash
+cp .env.example .env          # puis remplacer chaque mot de passe "change-me"
+./scripts/gen-certs.sh        # CA de développement + certificat du cloud-broker
+```
+
+Si le port 8080 est déjà pris sur la machine (par exemple par Oracle), mettre `API_PORT=18080` dans `.env` et utiliser
+ce port dans les tests ci-dessous.
+
+```bash
+docker compose up -d --build  # 6 services + dev-seed (enregistre les capteurs puis s'arrête)
+docker compose ps             # site-broker, cloud-broker, node-red, simulator, mongo, api : tous "Up"
+./scripts/smoke-test.sh       # tests automatiques de bout en bout : chaque ligne doit afficher PASS
+```
+
+`./scripts/run-all.sh` fait tout en une commande : la première préparation, le démarrage et le smoke test.
+
+**Attendu :** `All smoke checks passed.` Les tests manuels ci-dessous montrent la même chose étape par étape, par
+exemple pour une démonstration.
+
+### 1. L'API fonctionne
+
+```bash
+curl http://localhost:8080/api/health        # {"status":"ok"}
+docker compose logs api | grep -E "MongoDB|MQTT|Subscribed"
+```
+
+**Attendu :**
+- `MongoDB client for hosts [mongo:27017], database 'coldtrace', user 'coldtrace-app'`
+- `Connected to MQTT broker ssl://cloud-broker:8883`
+- `Subscribed to coldtrace/+/+/telemetry, coldtrace/+/gateway/status (QoS 1)`
+
+Pour suivre le journal en direct pendant les tests suivants : `docker compose logs -f api`.
+
+### 2. Voir la base de données
+
+Au choix :
+
+- **MongoDB Compass** (application de bureau). Se connecter avec
+  `mongodb://<MONGO_APP_USER>:<MONGO_APP_PASSWORD>@localhost:27017/coldtrace?authSource=coldtrace`, avec les valeurs
+  de `gateway-iot/.env`. On met bien `localhost` ici, car Compass tourne sur la machine et non dans Docker. La base
+  est le MongoDB local dans Docker, pas MongoDB Atlas.
+- **mongosh** dans le conteneur :
+  ```bash
+  docker compose exec mongo mongosh -u <MONGO_APP_USER> -p <MONGO_APP_PASSWORD> --authenticationDatabase coldtrace coldtrace
+  ```
+
+### 3. Les mesures des 10 capteurs arrivent
+
+Dans Compass, ouvrir `coldtrace` puis `measurements` et cliquer plusieurs fois sur **Refresh**. Dans mongosh :
+
+```js
+db.measurements.countDocuments()                      // augmente d'environ 10 toutes les 5 s
+db.measurements.distinct("sensorId")                  // [ "S01", ..., "S10" ]
+db.measurements.find({ siteId: "site02" }).sort({ ts: -1 }).limit(3)   // chambre de congélation : environ -20 °C
+```
+
+**Attendu :**
+- chaque document contient `msgId`, `siteId`, `sensorId`, `ts`, `temperature`, `humidity`, `doorOpen` et
+  `receivedAt` ;
+- `ts` et `receivedAt` sont des dates, pas du texte.
+
+### 4. État de la passerelle
+
+```js
+db.gateways.find()
+```
+
+**Attendu :** un document par passerelle de site (`_id: "site01"`), avec `status: "online"` et les compteurs
+(`forwarded`, `buffered`, `replayed`, `rejected`, `dropped`).
+
+### 5. Porte restée ouverte → incident `door`, puis `temperature`
+
+```bash
+curl -X POST http://localhost:4000/faults -H 'Content-Type: application/json' -d '{"sensorId":"S01","fault":"door_open"}'
+```
+
+PowerShell :
+
+```powershell
+Invoke-RestMethod -Method Post -Uri 'http://localhost:4000/faults' -ContentType 'application/json' `
+  -Body '{"sensorId":"S01","fault":"door_open"}'
+```
+
+**Attendu** (Compass : collection `incidents`, filtre `{ status: "open" }`) :
+- en moins de 5 s, un incident `metric: "door"` pour S01 (`value: 1`) ;
+- environ 45 s plus tard, quand la chambre froide dépasse 4 °C, un second incident `metric: "temperature"` pour S01,
+  dont la `peakValue` continue de monter ;
+- le journal de l'API affiche `Incident opened: S01 door=1.0`, puis `Incident opened: S01 temperature=...`.
+
+### 6. Le congélateur se réchauffe → incident `temperature`
+
+```bash
+curl -X POST http://localhost:4000/faults -H 'Content-Type: application/json' -d '{"sensorId":"S05","fault":"temp_rise"}'
+```
+
+**Attendu :** après environ 70 s, un incident `metric: "temperature"` pour S05, avec `thresholdMax: -18`.
+
+### 7. Un capteur n'envoie plus rien → incident `silence`
+
+```bash
+curl -X POST http://localhost:4000/faults -H 'Content-Type: application/json' -d '{"sensorId":"S08","fault":"silent"}'
+```
+
+**Attendu :**
+- après 60 à 75 s, un incident `metric: "silence"` pour S08, dont la `value` est le nombre de secondes sans mesure ;
+- `peakValue` augmente toutes les 15 s tant que le capteur reste muet ;
+- dans `measurements`, la dernière mesure de S08 ne change plus.
+
+### 8. Retour à la normale → les incidents se ferment
+
+```bash
+curl -X POST http://localhost:4000/faults/clear
+```
+
+**Attendu :**
+- les incidents `door` et `temperature` passent à `status: "closed"` avec une date `closedAt`, après 3 mesures
+  normales d'affilée (environ 15 s une fois la valeur revenue dans les limites) ;
+- l'incident `silence` se ferme dès que S08 envoie de nouveau ;
+- `db.incidents.countDocuments({ status: "open" })` finit à `0`.
+
+### 9. Alertes en temps réel par WebSocket
+
+```bash
+docker compose exec simulator node alert-e2e.js
+```
+
+Le script se connecte à `ws://api:8080/ws/alerts`. Il réchauffe S02 et attend l'alerte, puis il annule la panne et
+attend la fermeture.
+
+**Attendu :** `Alert for S02 at 4.x C, ... ms after the reading`, puis `Incident closed at ...`.
+
+Le script commence par annuler **toutes** les pannes : ne pas le lancer pendant les tests 5 à 7.
+
+### 10. Coupure du cloud : aucune mesure perdue
+
+```bash
+docker compose stop cloud-broker     # attendre environ 20 s
+docker compose start cloud-broker
+```
+
+**Attendu :**
+- pendant la coupure, Node-RED (http://localhost:1880) affiche `cloud offline | buffered: N`, et N augmente ;
+- le journal de l'API affiche `MQTT connection lost` ;
+- après le redémarrage, le journal affiche `Reconnected` et `Subscribed`, et Node-RED revient à
+  `cloud online | buffered: 0` ;
+- `db.measurements.countDocuments({ replayed: true })` a augmenté : les mesures gardées sont arrivées en retard, sans
+  perte.
+
+Le redémarrage de la passerelle (`docker compose restart node-red`) se comporte de la même façon : son tampon survit au
+redémarrage.
+
+### 11. Doublons et messages invalides
+
+Seuls les comptes des passerelles peuvent publier des mesures, donc le test se fait dans le conteneur du cloud-broker,
+avec l'identifiant de la passerelle. Lancer la première commande **deux fois** :
+
+```bash
+docker compose exec cloud-broker sh -c 'mosquitto_pub -h localhost -p 8883 --cafile /mosquitto/certs/ca.crt \
+  -u $GW_USER -P $GW_PASS -q 1 -t coldtrace/site01/S01/telemetry \
+  -m "{\"v\":1,\"msgId\":\"test-1\",\"ts\":\"2026-11-02T20:15:00Z\",\"temperature\":2.4}"'
+
+docker compose exec cloud-broker sh -c 'mosquitto_pub -h localhost -p 8883 --cafile /mosquitto/certs/ca.crt \
+  -u $GW_USER -P $GW_PASS -q 1 -t coldtrace/site01/S01/telemetry -m not-json'
+```
+
+**Attendu :**
+- `db.measurements.countDocuments({ msgId: "test-1" })` vaut `1` : le second envoi est ignoré ;
+- le message invalide apparaît comme `WARNING ... Rejected message ... invalid JSON` dans le journal de l'API ;
+- les mesures continuent d'arriver : l'API ne s'est pas arrêtée.
+
+Pour vérifier qu'il n'y a aucun doublon dans toute la base (l'index unique sur `msgId` le garantit), cette requête
+doit renvoyer `0` :
+
+```js
+db.measurements.aggregate([{ $group: { _id: "$msgId", n: { $sum: 1 } } }, { $match: { n: { $gt: 1 } } }]).toArray().length
+```
+
+### 12. Le flux de la passerelle
+
+Ouvrir http://localhost:1880 et suivre le flux de gauche à droite :
+
+```
+Sensors (site broker) → MQTT adapter → Check and clean → Forward or buffer → Cloud broker (MQTTS)
+```
+
+On peut double-cliquer sur un nœud pour voir son code, puis fermer avec **Cancel**. Ne pas cliquer sur **Deploy** :
+cela enregistrerait les modifications dans `gateway-iot/node-red/flows.json`.
+
+### En cas de problème
+
+| Symptôme | Cause probable |
+|---|---|
+| `curl` sur 8080 renvoie la page d'un autre serveur | Le port 8080 est pris : mettre `API_PORT=18080` dans `.env`, puis `docker compose up -d` |
+| Journal de l'API : `MQTT connect ... failed` | Le broker n'est pas encore démarré (l'API réessaie toutes les 5 s), ou `CLOUD_BACKEND_PASSWORD` est faux |
+| Journal de l'API : `Connection refused` vers `localhost:27017` | `MONGO_URI` contient `localhost` : dans un conteneur, il faut `mongo` |
+| Compass : `Authentication failed` | Il manque `?authSource=coldtrace`, ou l'utilisateur ou le mot de passe est faux |
+| Mesures enregistrées mais aucun incident | Le capteur n'est pas dans `sensors` ou n'a pas de `profile` (l'API l'indique une fois par un WARNING) |
+| L'API se déconnecte et se reconnecte sans arrêt | Deux API tournent avec le même identifiant MQTT : arrêter celle en trop |
 
 ## Déploiement
 

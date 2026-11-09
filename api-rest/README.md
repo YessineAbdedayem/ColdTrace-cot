@@ -70,7 +70,8 @@ Besides temperature and humidity, two more metrics need no profile limits:
 ## Tests
 
 `mvn test` needs JDK 21 or later. The tests check the API against the example messages in the format document, and
-they also run during `docker build`.
+they also run during `docker build`. To test the whole system by hand (readings, incidents, WebSocket, outage), see
+[Tester le système pas à pas](../README.md#tester-le-système-pas-à-pas) in the root README.
 
 ## How to build and run
 
