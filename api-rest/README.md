@@ -84,7 +84,12 @@ The API reads the messages the gateway sends, defined in
 ## Alerts
 
 Each new reading is compared with the limits of its sensor's profile. A sensor must exist in `coldtrace.sensors` with a
-`profile`, otherwise its readings are stored but raise no alert, and a WARNING is logged once.
+`profile`, otherwise its readings are stored but raise no alert, and a WARNING is logged once:
+
+- `Unknown sensor S01`: the sensor is not in `sensors`, so it raises no alert at all.
+- `No thresholds for profile 'null' of sensor S01`: the sensor has no `profile`. Only `door` and `silence` incidents
+  are raised, because they need no limits; temperature and humidity are not checked. The fix is in the root README,
+  under "En cas de problème".
 
 | Profile (`coldtrace.thresholds`) | Temperature | Humidity |
 |---|---|---|

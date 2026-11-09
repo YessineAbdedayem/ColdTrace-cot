@@ -282,8 +282,35 @@ cela enregistrerait les modifications dans `gateway-iot/node-red/flows.json`.
 | Journal de l'API : `MQTT connect ... failed` | Le broker n'est pas encore démarré (l'API réessaie toutes les 5 s), ou `CLOUD_BACKEND_PASSWORD` est faux |
 | Journal de l'API : `Connection refused` vers `localhost:27017` | `MONGO_URI` contient `localhost` : dans un conteneur, il faut `mongo` |
 | Compass : `Authentication failed` | Il manque `?authSource=coldtrace`, ou l'utilisateur ou le mot de passe est faux |
-| Mesures enregistrées mais aucun incident | Le capteur n'est pas dans `sensors` ou n'a pas de `profile` (l'API l'indique une fois par un WARNING) |
+| Mesures enregistrées mais aucun incident | Le capteur n'est pas dans `sensors` (l'API l'indique une fois par un WARNING `Unknown sensor`) |
+| Seuls les incidents `door` et `silence` apparaissent, jamais `temperature` ni `humidity` | Les capteurs n'ont pas de `profile` (WARNING `No thresholds for profile 'null'`). Voir ci-dessous |
 | L'API se déconnecte et se reconnecte sans arrêt | Deux API tournent avec le même identifiant MQTT : arrêter celle en trop |
+
+#### Les capteurs n'ont pas de `profile`
+
+**Pourquoi :**
+- Le moteur d'alertes trouve les limites de température et d'humidité grâce au `profile` du capteur (`cold` ou
+  `freezer`, dans la collection `thresholds`). Sans profil, il ne vérifie que la porte et le silence, qui n'ont pas
+  besoin de limites.
+- Cela arrive quand les capteurs ont été créés avant le service `dev-seed`, par exemple par un ancien script. En
+  effet, `dev-seed` n'ajoute que les capteurs absents et ne modifie jamais ceux qui existent déjà.
+
+**Vérifier** dans mongosh (voir le test 2) :
+
+```js
+db.sensors.countDocuments({ profile: { $exists: false } })   // doit valoir 0
+```
+
+**Corriger** sans perdre de données. Cela donne aux capteurs du simulateur le profil de `simulator/sensors.json`,
+c'est-à-dire S05 à S07 en congélateur et les autres en chambre froide :
+
+```js
+db.sensors.updateMany({ _id: { $in: ["S05", "S06", "S07"] }, profile: { $exists: false } }, { $set: { profile: "freezer" } })
+db.sensors.updateMany({ profile: { $exists: false } }, { $set: { profile: "cold" } })
+```
+
+Pas besoin de redémarrer : l'API relit le capteur à chaque mesure. Une base neuve (`docker compose down -v`, qui efface
+aussi les mesures) évite le problème, car `dev-seed` crée alors les capteurs avec leur profil.
 
 ## Déploiement
 
