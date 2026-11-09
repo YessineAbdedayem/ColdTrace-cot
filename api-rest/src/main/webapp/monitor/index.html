@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ColdTrace Monitor</title>
+  <meta name="description" content="Development monitor for ColdTrace: live sensors, incidents and simulator faults.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil+Display:wght@700;800&family=Big+Shoulders+Text:wght@400;600;700&family=Martian+Mono:wght@400;500;700&display=swap">
+  <link rel="stylesheet" href="monitor.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">❄</span>
+      <h1 class="stencil">ColdTrace</h1>
+      <span class="brand-sub">Reefer monitor · dev</span>
+    </div>
+    <div class="links" aria-live="polite">
+      <span class="chip" id="chip-api"><i></i>API</span>
+      <span class="chip" id="chip-ws"><i></i>Alert link</span>
+      <span id="gateways"></span>
+      <time class="clock" id="clock">--:--:--</time>
+    </div>
+  </header>
+
+  <main class="deck">
+    <section class="sites" id="sites" aria-label="Sites and sensors">
+      <p class="loading">Reading the cold chain…</p>
+    </section>
+
+    <aside class="log" aria-label="Incidents">
+      <div class="log-head">
+        <h2 class="stencil">Logbook</h2>
+        <span class="open-count" id="open-count">0 open</span>
+      </div>
+
+      <h3 class="log-title">Open now</h3>
+      <ol class="incidents" id="open-incidents"></ol>
+      <p class="empty" id="open-empty">All clear. Nothing out of range.</p>
+
+      <h3 class="log-title">Live feed</h3>
+      <ol class="feed" id="feed"></ol>
+
+      <div class="controls">
+        <button type="button" class="btn-clear" id="clear-faults">Clear all faults</button>
+        <p class="hint" id="fault-hint"></p>
+      </div>
+
+      <details class="cheats">
+        <summary>Terminal-only tests</summary>
+        <p>Cloud outage, from <code>gateway-iot/</code>:</p>
+        <pre>docker compose stop cloud-broker
+docker compose start cloud-broker</pre>
+        <p>Watch the gateway buffer at <a href="http://localhost:1880" target="_blank" rel="noopener">localhost:1880</a>, then the replayed readings here.</p>
+      </details>
+    </aside>
+  </main>
+
+  <template id="tile-tpl">
+    <article class="tile">
+      <header class="tile-head">
+        <span class="tile-id stencil"></span>
+        <span class="tile-name"></span>
+        <span class="tile-flag"></span>
+      </header>
+      <div class="tile-temp"><span class="t-val">--</span><span class="t-unit">°C</span></div>
+      <dl class="tile-stats">
+        <div><dt>Hum</dt><dd class="h-val">--</dd></div>
+        <div><dt>Door</dt><dd class="d-val">--</dd></div>
+        <div><dt>Seen</dt><dd class="s-val">--</dd></div>
+      </dl>
+      <svg class="spark" viewBox="0 0 120 34" preserveAspectRatio="none" aria-hidden="true">
+        <rect class="spark-band" x="0" width="120"></rect>
+        <polyline class="spark-line" points=""></polyline>
+      </svg>
+      <div class="faults" role="group" aria-label="Simulate a fault">
+        <button type="button" data-fault="door_open">Door</button>
+        <button type="button" data-fault="temp_rise">Heat</button>
+        <button type="button" data-fault="silent">Mute</button>
+        <button type="button" data-fault="none">Reset</button>
+      </div>
+    </article>
+  </template>
+
+  <script src="monitor.js"></script>
+</body>
+</html>
