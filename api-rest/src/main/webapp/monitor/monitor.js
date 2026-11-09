@@ -5,6 +5,8 @@
 const POLL_MS = 5000;
 const SILENT_AFTER_S = 60;
 const METRIC_LABEL = { temperature: "Temperature", humidity: "Humidity", door: "Door open", silence: "No signal" };
+// incidents written before the "metric" field existed have no metric: show them generically
+const metricLabel = m => METRIC_LABEL[m] || m || "Incident";
 const FAULT_LABEL = { door_open: "door open", temp_rise: "heating", silent: "muted", none: "normal" };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -198,7 +200,7 @@ function renderOpen() {
     const li = document.createElement("li");
     li.className = "incident m-" + i.metric;
     const who = document.createElement("span"); who.className = "who"; who.textContent = i.sensorId;
-    const what = document.createElement("span"); what.className = "what"; what.textContent = METRIC_LABEL[i.metric] || i.metric;
+    const what = document.createElement("span"); what.className = "what"; what.textContent = metricLabel(i.metric);
     const when = document.createElement("span"); when.className = "when"; when.textContent = ago(i.openedAt);
     const detail = document.createElement("span"); detail.className = "detail"; detail.textContent = incidentDetail(i);
     li.append(who, what, when, detail);
@@ -220,7 +222,7 @@ function addFeed(kind, incident, at, flash) {
   time.textContent = hhmmss(at);
   const text = document.createElement("span");
   const b = document.createElement("b");
-  b.textContent = (kind === "opened" ? "▲ " : "▼ ") + incident.sensorId + " " + (METRIC_LABEL[incident.metric] || incident.metric);
+  b.textContent = (kind === "opened" ? "▲ " : "▼ ") + incident.sensorId + " " + metricLabel(incident.metric);
   text.append(b, document.createTextNode(kind === "opened" ? " opened" : " closed"));
   li.append(time, text);
   feed.prepend(li);
