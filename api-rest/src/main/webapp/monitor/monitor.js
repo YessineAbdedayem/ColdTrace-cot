@@ -273,6 +273,8 @@ function createIncidentRow(incident) {
   controls.append(submit, cancel);
   form.append(operatorLabel, commentLabel, error, controls);
 
+  const row = { el, who, what, when, detail, state, acknowledgement, action, ackButton, form, operator, comment, error, submit, cancel };
+
   ackButton.addEventListener("click", () => {
     form.hidden = false;
     ackButton.hidden = true;
@@ -291,7 +293,7 @@ function createIncidentRow(incident) {
 
   action.append(ackButton, form);
   el.append(who, what, when, detail, state, acknowledgement, action);
-  return { el, who, what, when, detail, state, acknowledgement, action, ackButton, form, operator, comment, error, submit, cancel };
+  return row;
 }
 
 function updateIncidentRow(row, incident) {
