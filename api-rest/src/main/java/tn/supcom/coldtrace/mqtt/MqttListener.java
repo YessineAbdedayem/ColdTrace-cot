@@ -50,7 +50,8 @@ import java.util.logging.Logger;
  * Subscribes to the gateways' messages on Mosquitto. Each valid reading goes to coldtrace.measurements,
  * and the latest status of each site's gateway goes to coldtrace.gateways.
  *
- * Env: MQTT_URL (default tcp://localhost:1883), MQTT_USER, MQTT_PASSWORD, MQTT_CA_PATH (PEM, optional).
+ * Env: MQTT_URL (default ssl://cloud-broker:8883), MQTT_USER (default backend), MQTT_PASSWORD,
+ * MQTT_CA_PATH (CA certificate in PEM, needed for the dev CA).
  */
 @ApplicationScoped
 public class MqttListener implements MqttCallbackExtended {
@@ -79,29 +80,33 @@ public class MqttListener implements MqttCallbackExtended {
 
     void onStartup(@Observes @Priority(10) Startup event) {
         try {
-            String url = env("MQTT_URL", "tcp://localhost:1883");
+            String url = env("MQTT_URL", "ssl://cloud-broker:8883");
             client = new MqttAsyncClient(url, CLIENT_ID, new MemoryPersistence());
             client.setCallback(this);
-            options = buildOptions();
+            options = buildOptions(url);
             connect();
         } catch (Exception e) {
             LOG.log(Level.SEVERE, "MQTT listener not started: invalid configuration", e);
         }
     }
 
-    private MqttConnectOptions buildOptions() throws Exception {
+    private MqttConnectOptions buildOptions(String url) throws Exception {
         MqttConnectOptions o = new MqttConnectOptions();
         o.setAutomaticReconnect(true);
         o.setCleanSession(false);
-        String user = System.getenv("MQTT_USER");
-        if (!isBlank(user)) {
-            o.setUserName(user);
-            String password = System.getenv("MQTT_PASSWORD");
-            o.setPassword(password == null ? new char[0] : password.toCharArray());
+        // "backend" is the account the cloud broker's ACL allows to read every site.
+        o.setUserName(env("MQTT_USER", "backend"));
+        String password = System.getenv("MQTT_PASSWORD");
+        if (isBlank(password)) {
+            LOG.warning("MQTT_PASSWORD is not set; the broker will probably refuse the login");
+        } else {
+            o.setPassword(password.toCharArray());
         }
         String caPath = System.getenv("MQTT_CA_PATH");
         if (!isBlank(caPath)) {
             o.setSocketFactory(socketFactoryTrusting(Path.of(caPath)));
+        } else if (url.startsWith("ssl://")) {
+            LOG.warning("MQTT_CA_PATH is not set: only certificates trusted by the JVM will be accepted");
         }
         return o;
     }
@@ -182,6 +187,12 @@ public class MqttListener implements MqttCallbackExtended {
         Measurement m = parse(topic, payload, Measurement.class);
         if (m == null) {
             return;
+        }
+        // The topic is the source of truth for the ids: the broker ACL checks the topic, not the body.
+        String[] parts = topic.split("/");
+        if (parts.length == 4) {
+            m.setSiteId(parts[1]);
+            m.setSensorId(parts[2]);
         }
         String error = validate(m);
         if (error != null) {
