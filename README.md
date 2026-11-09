@@ -89,6 +89,22 @@ docker compose ps             # site-broker, cloud-broker, node-red, simulator, 
 **Attendu :** `All smoke checks passed.` Les tests manuels ci-dessous montrent la même chose étape par étape, par
 exemple pour une démonstration.
 
+### Le plus simple : la page de supervision
+
+Ouvrir **http://localhost:8080/monitor/** (ou le port de `API_PORT`). Elle remplace la plupart des commandes de cette
+section :
+
+- **Capteurs :** chaque capteur est affiché avec sa température, son humidité, sa porte, l'âge de sa dernière mesure
+  et une courbe des 2 dernières minutes. L'affichage se rafraîchit toutes les 5 s.
+- **Pannes :** les boutons **Door / Heat / Mute / Reset** de chaque capteur déclenchent les pannes des tests 5 à 8, et
+  « Clear all faults » les annule toutes.
+- **Incidents :** le journal montre les incidents ouverts et, en direct par WebSocket, chaque ouverture et fermeture
+  (test 9).
+- **En-tête :** il indique l'état de l'API, de la liaison d'alertes et de chaque passerelle.
+
+Les commandes ci-dessous restent utiles pour vérifier en détail, et pour ce que la page ne peut pas faire, comme la
+coupure du cloud (test 10).
+
 ### 1. L'API fonctionne
 
 ```bash

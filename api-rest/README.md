@@ -8,6 +8,8 @@ Back-end skeleton for ColdTrace:
 - the latest status of each site's gateway is kept in `coldtrace.gateways`, with the site id as `_id`
 - each new reading is checked against its sensor's limits, and incidents are opened and closed in `coldtrace.incidents`
 - live alerts are pushed to WebSocket clients on `/ws/alerts`
+- read-only REST endpoints (sensors, incidents, gateways) and a **monitor page** at `/monitor/` to test everything from
+  the browser
 
 Stack: Java 21, Jakarta EE 11 (`jakarta.jakartaee-api` 11.0.0), WildFly 42 (`quay.io/wildfly/wildfly:42.0.0.Final-jdk21`),
 MongoDB Java driver 5.14 (sync), Eclipse Paho MQTT v3 1.2.5.
@@ -19,8 +21,49 @@ src/main/java/tn/supcom/coldtrace/
 ├── model/                   # Site, Sensor, Measurement, GatewayStatus, Incident, Threshold
 ├── db/MongoProducer.java    # MongoClient + MongoDatabase producer (database from MONGO_URI), indexes, default thresholds
 ├── mqtt/MqttListener.java   # Paho subscriber -> measurements and gateways collections
-└── alert/                   # AlertEngine (incidents), AlertRules (pure decisions), AlertSocket + AlertBroadcaster (WebSocket)
+├── alert/                   # AlertEngine (incidents), AlertRules (pure decisions), AlertSocket + AlertBroadcaster (WebSocket)
+└── rest/                    # read-only endpoints + dev-only fault proxy for the monitor page
+src/main/webapp/
+├── index.html               # redirects / to the monitor
+└── monitor/                 # monitor page: index.html, monitor.css, monitor.js (no framework, no build step)
 ```
+
+## REST endpoints
+
+| Method and path | Returns |
+|---|---|
+| `GET /api/health` | `{"status":"ok"}` |
+| `GET /api/sensors` | every sensor with its profile limits, latest reading and last 24 temperatures (oldest first) |
+| `GET /api/incidents?status=open\|closed&limit=50` | incidents, newest first (`limit` up to 200; no `status` = both) |
+| `GET /api/gateways` | latest status and counters of each site's gateway |
+| `GET /api/dev/faults` | **dev only**: the simulator's sensors and their active fault |
+| `POST /api/dev/faults` | **dev only**: `{"sensorId":"S01","fault":"door_open"}` (or `siteId`); faults: `door_open`, `temp_rise`, `silent`, `none` |
+| `POST /api/dev/faults/clear` | **dev only**: clears every fault |
+
+The read endpoints have no login yet: that comes with Jakarta Security.
+
+The `/api/dev/faults` endpoints forward to the simulator's control API. The browser cannot call the simulator itself:
+it is another origin and has no CORS. They are **off (404) unless `SIM_CONTROL_URL` is set**. The Compose stack sets it
+to `http://simulator:4000`; never set it in production.
+
+## Monitor page
+
+Open **http://localhost:8080/monitor/** (or just http://localhost:8080/). This is a test tool for developers; the
+real dashboards are the PWAs.
+
+- **Sites and sensors:** each sensor tile shows its temperature, humidity, door, the time since its last reading
+  and a sparkline of the last 2 minutes, with the allowed band. It refreshes every 5 s.
+- **States:** a tile turns orange with hazard stripes when out of range, amber when the door is open, and grey with
+  "no signal" when the sensor is silent.
+- **Fault buttons:** Door / Heat / Mute / Reset on each tile, and "Clear all faults", drive the simulator.
+- **Logbook:** the open incidents, and a live feed of incidents opening and closing, received over the WebSocket.
+- **Header:** the API and WebSocket status, and each gateway's status. Hover a gateway chip for its counters.
+
+Things the page cannot do (a cloud outage, for example) are listed under "Terminal-only tests" at the bottom of the
+logbook.
+
+The path is `/monitor/` and not `/console/` on purpose: WildFly reserves `/console` for its admin console and redirects
+it to `/noredirect.html`.
 
 ## Message format
 
