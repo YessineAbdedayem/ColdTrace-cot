@@ -7,6 +7,7 @@ public class AlertEvent {
 
     public static final String OPENED = "incident.opened";
     public static final String CLOSED = "incident.closed";
+    public static final String ACKNOWLEDGED = "incident.acknowledged";
 
     private final String event;
     private final Incident incident;

@@ -92,4 +92,24 @@ class AlertRulesTest {
             assertFalse(json.contains("closedAt"), json);
         }
     }
+
+    @Test
+    void acknowledgedAlertEventIncludesAcknowledgementDetails() throws Exception {
+        Document doc = Incident.newOpenDocument(
+                        "site01", "S01", "door", 1.0, null, 0.0, Date.from(Instant.parse("2026-11-09T12:00:00Z")))
+                .append("_id", new ObjectId("65f000000000000000000001"))
+                .append("acknowledgedAt", Date.from(Instant.parse("2026-11-09T12:01:00Z")))
+                .append("acknowledgedBy", "Yessine")
+                .append("comment", "Door checked");
+
+        try (Jsonb jsonb = JsonbBuilder.create()) {
+            String json = jsonb.toJson(new AlertEvent(AlertEvent.ACKNOWLEDGED, Incident.fromDocument(doc)));
+
+            assertTrue(json.contains("\"event\":\"incident.acknowledged\""), json);
+            assertTrue(json.contains("\"acknowledgedAt\":\"2026-11-09T12:01:00Z\""), json);
+            assertTrue(json.contains("\"acknowledgedBy\":\"Yessine\""), json);
+            assertTrue(json.contains("\"comment\":\"Door checked\""), json);
+            assertTrue(json.contains("\"status\":\"open\""), json);
+        }
+    }
 }
