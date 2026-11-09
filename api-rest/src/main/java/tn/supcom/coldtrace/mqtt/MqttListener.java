@@ -25,6 +25,7 @@ import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.bson.Document;
+import tn.supcom.coldtrace.alert.AlertEngine;
 import tn.supcom.coldtrace.model.GatewayStatus;
 import tn.supcom.coldtrace.model.Measurement;
 
@@ -64,6 +65,9 @@ public class MqttListener implements MqttCallbackExtended {
 
     @Inject
     MongoDatabase db;
+
+    @Inject
+    AlertEngine alerts;
 
     @Resource
     ManagedScheduledExecutorService scheduler;
@@ -192,6 +196,12 @@ public class MqttListener implements MqttCallbackExtended {
             }
             // QoS 1 and gateway replay can deliver a reading twice: the unique msgId index keeps one copy.
             LOG.fine("Ignored duplicate reading " + m.getMsgId());
+            return;
+        }
+        try {
+            alerts.process(m);
+        } catch (RuntimeException e) {
+            LOG.log(Level.SEVERE, "Alert evaluation failed for reading " + m.getMsgId(), e);
         }
     }
 

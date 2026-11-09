@@ -34,12 +34,36 @@ The API reads the messages the gateway sends, defined in
   WARNING. It is not stored.
 - A reading whose `msgId` is already stored is ignored, because a reading can arrive twice after a reconnect.
 
+## Alerts
+
+Each new reading is compared with the limits of its sensor's profile. A sensor must exist in `coldtrace.sensors` with a
+`profile`, otherwise its readings are stored but raise no alert, and a WARNING is logged once.
+
+| Profile (`coldtrace.thresholds`) | Temperature | Humidity |
+|---|---|---|
+| `cold` | 0 to 4 °C | 50 to 70 % |
+| `freezer` | -18 °C or below | 50 to 70 % |
+
+The API adds these defaults at startup only for profiles that have none, so edited limits are kept.
+
+- One reading outside the limits opens an incident in `coldtrace.incidents`, one per sensor and metric.
+- Three consecutive in-range readings close it. A new breach during those readings keeps it open.
+- Connected clients of `ws://<host>:8080/ws/alerts` receive JSON when an incident opens or closes. The endpoint has no
+  login yet.
+
+```json
+{"event":"incident.opened","incident":{"id":"65f000000000000000000001","siteId":"site01","sensorId":"S02","metric":"temperature","status":"open","value":4.1,"peakValue":4.1,"thresholdMin":0.0,"thresholdMax":4.0,"openedAt":"2026-11-09T12:00:00Z"}}
+```
+
 ## Tests
 
 `mvn test` needs JDK 21 or later. The tests check the API against the example messages in the format document, and
 they also run during `docker build`.
 
 ## How to build and run
+
+The simplest way is `gateway-iot/scripts/run-all.sh`, which starts the API with the rest of the stack and tests it.
+The steps below run the API on its own.
 
 ### 1. Build the image
 

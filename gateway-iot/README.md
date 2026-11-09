@@ -21,10 +21,11 @@ see [MESSAGE-FORMAT.md](MESSAGE-FORMAT.md).
 
 | Path | What |
 |---|---|
-| `docker-compose.yml` | the 5 containers: site broker, cloud broker, Node-RED, simulator, MongoDB |
+| `docker-compose.yml` | site broker, cloud broker, Node-RED, simulator, MongoDB, the API, and a one-shot job that registers the simulated sensors |
 | `.env.example` | settings and passwords (copy to `.env`) |
 | `scripts/gen-certs.sh` | creates the dev CA and the cloud broker's TLS certificate |
-| `scripts/smoke-test.sh` | checks the services, telemetry and MongoDB indexes |
+| `scripts/run-all.sh` | prepares `.env` and certificates, starts everything, runs the smoke test |
+| `scripts/smoke-test.sh` | end-to-end checks, including alerts and a cloud outage |
 | `mosquitto/site/` | site broker config |
 | `mosquitto/cloud/` | cloud broker config (TLS only, login, access rules in `acl`) |
 | `mongo/init-app-user.sh` | creates the backend database user, collections and indexes |
@@ -38,12 +39,30 @@ see [MESSAGE-FORMAT.md](MESSAGE-FORMAT.md).
 You need Docker (Docker Desktop on Windows/Mac) and `openssl`
 (on Windows, run the script from Git Bash or WSL).
 
+The quickest way starts everything and tests it, in about five minutes:
+
+```bash
+./scripts/run-all.sh
+```
+
+From PowerShell, in the repo root:
+
+```powershell
+& "C:\Program Files\Git\bin\bash.exe" gateway-iot/scripts/run-all.sh
+```
+
+Or step by step:
+
 ```bash
 cd gateway-iot
 cp .env.example .env            # then change the example passwords in .env
 ./scripts/gen-certs.sh          # creates certs/ (never committed)
-docker compose up -d
+docker compose up -d --build
 ```
+
+If the certificates are missing, `docker compose up` stops with an error
+instead of starting a broken stack. The API is on http://localhost:8080
+(change it with `API_PORT` in `.env`).
 
 MongoDB's init script creates the `coldtrace` database and its app user,
 collections and indexes when the data volume is empty. Init scripts run only
@@ -104,9 +123,12 @@ Run the end-to-end local checks from `gateway-iot/` after the stack is up:
 ./scripts/smoke-test.sh
 ```
 
-The smoke test checks that all five services are running, receives telemetry
-from all ten sensor topics through the cloud broker, and verifies MongoDB's
-ping and unique `msgId` index. Simulator model tests run with
+The smoke test takes about four minutes. It checks that the services are
+running, that telemetry and gateway status reach MongoDB through the API, and
+that duplicates and bad messages are handled. It also warms sensor S02 to
+confirm a WebSocket alert in under 10 seconds and the incident closing, and it
+stops the cloud broker briefly to confirm replay. While it runs, any simulator
+faults you set are cleared. Simulator model tests run with
 `cd simulator && npm test`.
 
 ## Test a cloud outage

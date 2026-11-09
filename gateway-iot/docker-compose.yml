@@ -4,6 +4,8 @@
 #   node-red     : the gateway
 #   simulator    : fake sensors and localhost-only fault control API
 #   mongo        : local database for the backend
+#   dev-seed     : registers the simulated sensors in MongoDB, then exits
+#   api          : Jakarta EE backend, built from ../api-rest
 #
 # Before the first start:  cp .env.example .env   and   ./scripts/gen-certs.sh
 # Start:                    docker compose up -d
@@ -31,7 +33,11 @@ services:
     volumes:
       - ./mosquitto/cloud/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ./mosquitto/cloud/acl:/mosquitto/config/acl:ro
-      - ./certs:/mosquitto/certs:ro
+      # create_host_path: false makes "up" fail when a certificate is missing,
+      # instead of Docker silently creating an empty folder with its name.
+      - { type: bind, source: ./certs/ca.crt, target: /mosquitto/certs/ca.crt, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ./certs/cloud-broker.crt, target: /mosquitto/certs/cloud-broker.crt, read_only: true, bind: { create_host_path: false } }
+      - { type: bind, source: ./certs/cloud-broker.key, target: /mosquitto/certs/cloud-broker.key, read_only: true, bind: { create_host_path: false } }
       - cloud-data:/mosquitto/data
     # Build the password file from .env at each start, then run the broker
     entrypoint:
@@ -64,7 +70,8 @@ services:
       REPLAY_BATCH: ${REPLAY_BATCH}
     volumes:
       - ./node-red:/data                       # flows.json, settings.js, saved buffer
-      - ./certs/ca.crt:/certs/ca.crt:ro        # only the CA certificate, never the keys
+      # only the CA certificate, never the keys
+      - { type: bind, source: ./certs/ca.crt, target: /certs/ca.crt, read_only: true, bind: { create_host_path: false } }
     restart: unless-stopped
 
   mongo:
@@ -80,6 +87,50 @@ services:
     volumes:
       - mongo-data:/data/db
       - ./mongo/init-app-user.sh:/docker-entrypoint-initdb.d/init-app-user.sh:ro
+    # While the init script runs, MongoDB listens on loopback only.
+    # Pinging the container's own hostname passes once the real server is up.
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --host \"$$(hostname)\" --eval \"db.adminCommand('ping').ok\""]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+    restart: unless-stopped
+
+  # Dev only: registers the simulated sensors and their profiles, then exits.
+  dev-seed:
+    image: mongo:7
+    depends_on:
+      mongo:
+        condition: service_healthy
+    entrypoint:
+      - mongosh
+      - --quiet
+      - mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongo:27017/${MONGO_DB:-coldtrace}?authSource=${MONGO_DB:-coldtrace}
+      - --file
+      - /seed/seed-dev-sensors.js
+    volumes:
+      - ./mongo/seed-dev-sensors.js:/seed/seed-dev-sensors.js:ro
+      - ./simulator/sensors.json:/seed/sensors.json:ro
+    restart: "no"
+
+  api:
+    build: ../api-rest
+    image: coldtrace-api
+    depends_on:
+      cloud-broker:
+        condition: service_started
+      dev-seed:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${API_PORT:-8080}:8080"
+    environment:
+      MONGO_URI: mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongo:27017/${MONGO_DB:-coldtrace}?authSource=${MONGO_DB:-coldtrace}
+      MQTT_URL: ssl://cloud-broker:8883
+      MQTT_USER: ${CLOUD_BACKEND_USER}
+      MQTT_PASSWORD: ${CLOUD_BACKEND_PASSWORD}
+      MQTT_CA_PATH: /certs/ca.crt
+    volumes:
+      - { type: bind, source: ./certs/ca.crt, target: /certs/ca.crt, read_only: true, bind: { create_host_path: false } }
     restart: unless-stopped
 
   simulator:

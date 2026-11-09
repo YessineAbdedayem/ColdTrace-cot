@@ -10,6 +10,7 @@ public class Sensor {
     private String name;
     private Double minThreshold;
     private Double maxThreshold;
+    private String profile;
 
     public Sensor() {
     }
@@ -29,17 +30,20 @@ public class Sensor {
                 .append("type", type)
                 .append("name", name)
                 .append("minThreshold", minThreshold)
-                .append("maxThreshold", maxThreshold);
+                .append("maxThreshold", maxThreshold)
+                .append("profile", profile);
     }
 
     public static Sensor fromDocument(Document doc) {
-        return new Sensor(
+        Sensor sensor = new Sensor(
                 doc.getString("_id"),
                 doc.getString("siteId"),
                 doc.getString("type"),
                 doc.getString("name"),
                 toDouble(doc.get("minThreshold")),
                 toDouble(doc.get("maxThreshold")));
+        sensor.profile = doc.getString("profile");
+        return sensor;
     }
 
     private static Double toDouble(Object o) {
@@ -58,4 +62,6 @@ public class Sensor {
     public void setMinThreshold(Double minThreshold) { this.minThreshold = minThreshold; }
     public Double getMaxThreshold() { return maxThreshold; }
     public void setMaxThreshold(Double maxThreshold) { this.maxThreshold = maxThreshold; }
+    public String getProfile() { return profile; }
+    public void setProfile(String profile) { this.profile = profile; }
 }

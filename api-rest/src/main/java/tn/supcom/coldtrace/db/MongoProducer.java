@@ -4,8 +4,10 @@ import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
+import com.mongodb.client.model.UpdateOptions;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Priority;
@@ -14,6 +16,8 @@ import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.Startup;
 import jakarta.enterprise.inject.Produces;
 import org.bson.Document;
+import tn.supcom.coldtrace.model.Incident;
+import tn.supcom.coldtrace.model.Threshold;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -44,8 +48,29 @@ public class MongoProducer {
                     Indexes.compoundIndex(Indexes.ascending("siteId", "sensorId"), Indexes.descending("ts")),
                     new IndexOptions().name("site_sensor_ts"));
             LOG.info("MongoDB ready, measurements indexes ensured");
+
+            // At most one open incident per sensor and metric.
+            database().getCollection("incidents").createIndex(
+                    Indexes.ascending("sensorId", "metric"),
+                    new IndexOptions().unique(true).name("one_open_incident")
+                            .partialFilterExpression(Filters.eq("status", Incident.OPEN)));
+            insertMissingThresholds();
+            LOG.info("Alert indexes and default thresholds ensured");
         } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "Could not create MongoDB index (is MongoDB reachable?)", e);
+            LOG.log(Level.WARNING, "Could not prepare MongoDB (is MongoDB reachable?)", e);
+        }
+    }
+
+    /** Adds the default limits only for profiles that have none, so later edits are kept. */
+    private void insertMissingThresholds() {
+        MongoCollection<Document> thresholds = database().getCollection("thresholds");
+        for (Threshold threshold : Threshold.DEFAULTS) {
+            Document fields = threshold.toDocument();
+            fields.remove("_id");
+            thresholds.updateOne(
+                    Filters.eq("_id", threshold.getProfile()),
+                    new Document("$setOnInsert", fields),
+                    new UpdateOptions().upsert(true));
         }
     }
 
