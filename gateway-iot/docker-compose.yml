@@ -129,6 +129,8 @@ services:
       MQTT_USER: ${CLOUD_BACKEND_USER}
       MQTT_PASSWORD: ${CLOUD_BACKEND_PASSWORD}
       MQTT_CA_PATH: /certs/ca.crt
+      # Dev only: lets the monitor page (/monitor/) trigger simulator faults through the API
+      SIM_CONTROL_URL: http://simulator:${SIM_CONTROL_PORT:-4000}
     volumes:
       - { type: bind, source: ./certs/ca.crt, target: /certs/ca.crt, read_only: true, bind: { create_host_path: false } }
     restart: unless-stopped
