@@ -45,6 +45,19 @@ class AlertRulesTest {
     }
 
     @Test
+    void openDoorIsABreachAndClosedDoorIsNot() {
+        assertTrue(AlertRules.isBreached(AlertRules.doorValue(true), null, AlertRules.DOOR_MAX));
+        assertFalse(AlertRules.isBreached(AlertRules.doorValue(false), null, AlertRules.DOOR_MAX));
+    }
+
+    @Test
+    void sensorIsSilentOnlyAfterSixtySecondsWithoutReading() {
+        assertFalse(AlertRules.isSilent(5));
+        assertFalse(AlertRules.isSilent(60));
+        assertTrue(AlertRules.isSilent(61));
+    }
+
+    @Test
     void firstBreachOpensAnIncidentAndNormalReadingsDoNothing() {
         assertEquals(Action.OPEN, AlertRules.decide(false, true, 0));
         assertEquals(Action.NONE, AlertRules.decide(false, false, 0));
