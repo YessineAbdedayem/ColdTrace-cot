@@ -1,5 +1,6 @@
 package tn.supcom.coldtrace.db;
 
+import com.mongodb.ConnectionString;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
@@ -22,19 +23,32 @@ import tn.supcom.coldtrace.model.Threshold;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-/** Owns the single MongoClient and exposes the "coldtrace" database for injection. */
+/**
+ * Owns the single MongoClient and exposes the ColdTrace database for injection.
+ *
+ * MONGO_URI is expected to use the app user, e.g.
+ * mongodb://USER:PASSWORD@mongo:27017/coldtrace?authSource=coldtrace
+ * The database name comes from the URI path (default "coldtrace").
+ */
 @ApplicationScoped
 public class MongoProducer {
 
     private static final Logger LOG = Logger.getLogger(MongoProducer.class.getName());
-    private static final String DB_NAME = "coldtrace";
+    private static final String DEFAULT_URI = "mongodb://localhost:27017/coldtrace";
+    private static final String DEFAULT_DB = "coldtrace";
 
     private MongoClient client;
+    private String dbName;
 
     @PostConstruct
     void init() {
         String uri = System.getenv("MONGO_URI");
-        client = MongoClients.create(uri == null || uri.isBlank() ? "mongodb://localhost:27017" : uri);
+        ConnectionString cs = new ConnectionString(uri == null || uri.isBlank() ? DEFAULT_URI : uri);
+        dbName = cs.getDatabase() == null ? DEFAULT_DB : cs.getDatabase();
+        client = MongoClients.create(cs);
+        // Never log the URI itself: it contains the password.
+        LOG.info("MongoDB client for hosts " + cs.getHosts() + ", database '" + dbName + "'"
+                + (cs.getUsername() == null ? " (no authentication)" : ", user '" + cs.getUsername() + "'"));
     }
 
     /** Runs before the MQTT listener (lower priority value = earlier). */
@@ -76,7 +90,7 @@ public class MongoProducer {
 
     @Produces
     public MongoDatabase database() {
-        return client.getDatabase(DB_NAME);
+        return client.getDatabase(dbName);
     }
 
     @PreDestroy
