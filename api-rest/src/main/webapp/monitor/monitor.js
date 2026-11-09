@@ -11,6 +11,7 @@ const FAULT_LABEL = { door_open: "door open", temp_rise: "heating", silent: "mut
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const tiles = new Map();       // sensorId -> { el, ... }
+const incidentRows = new Map(); // incident id -> persistent row, preserving an in-progress form across polls
 let faultsEnabled = null;      // null = unknown yet
 let simFaults = {};            // sensorId -> active fault
 let openIncidents = [];
@@ -20,12 +21,15 @@ let firstRender = true;
 
 async function getJson(url, options) {
   const r = await fetch(url, options);
+  let data;
+  try { data = await r.json(); } catch (e) { data = null; }
   if (!r.ok) {
-    const err = new Error(url + " returned " + r.status);
+    const message = data && typeof data.error === "string" ? data.error : url + " returned " + r.status;
+    const err = new Error(message);
     err.status = r.status;
     throw err;
   }
-  return r.json();
+  return data;
 }
 
 function fmt(n, digits = 1) {
@@ -195,16 +199,23 @@ function incidentDetail(i) {
 
 function renderOpen() {
   const list = $("#open-incidents");
-  list.textContent = "";
-  for (const i of openIncidents) {
-    const li = document.createElement("li");
-    li.className = "incident m-" + i.metric;
-    const who = document.createElement("span"); who.className = "who"; who.textContent = i.sensorId;
-    const what = document.createElement("span"); what.className = "what"; what.textContent = metricLabel(i.metric);
-    const when = document.createElement("span"); when.className = "when"; when.textContent = ago(i.openedAt);
-    const detail = document.createElement("span"); detail.className = "detail"; detail.textContent = incidentDetail(i);
-    li.append(who, what, when, detail);
-    list.append(li);
+  const activeIds = new Set();
+  openIncidents.forEach((incident, index) => {
+    activeIds.add(incident.id);
+    let row = incidentRows.get(incident.id);
+    if (!row) {
+      row = createIncidentRow(incident);
+      incidentRows.set(incident.id, row);
+    }
+    updateIncidentRow(row, incident);
+    const current = list.children[index];
+    if (current !== row.el) list.insertBefore(row.el, current || null);
+  });
+  for (const [id, row] of incidentRows) {
+    if (!activeIds.has(id)) {
+      row.el.remove();
+      incidentRows.delete(id);
+    }
   }
   const n = openIncidents.length;
   $("#open-empty").hidden = n > 0;
@@ -212,6 +223,127 @@ function renderOpen() {
   count.textContent = n + " open";
   count.classList.toggle("hot", n > 0);
   document.title = (n ? `(${n}) ` : "") + "ColdTrace Monitor";
+}
+
+function createIncidentRow(incident) {
+  const el = document.createElement("li");
+  el.classList.add("incident", "m-" + incident.metric);
+
+  const who = document.createElement("span"); who.className = "who";
+  const what = document.createElement("span"); what.className = "what";
+  const when = document.createElement("span"); when.className = "when";
+  const detail = document.createElement("span"); detail.className = "detail";
+  const state = document.createElement("span"); state.className = "incident-state";
+  const acknowledgement = document.createElement("div"); acknowledgement.className = "acknowledgement";
+  const action = document.createElement("div"); action.className = "ack-action";
+  const ackButton = document.createElement("button");
+  ackButton.type = "button";
+  ackButton.className = "btn-ack";
+  ackButton.textContent = "Acquitter";
+
+  const form = document.createElement("form");
+  form.className = "ack-form";
+  form.hidden = true;
+  const operatorLabel = document.createElement("label");
+  operatorLabel.append(document.createTextNode("Nom de l’opérateur (démo)"));
+  const operator = document.createElement("input");
+  operator.type = "text";
+  operator.maxLength = 64;
+  operator.required = true;
+  operator.autocomplete = "name";
+  operatorLabel.append(operator);
+  const commentLabel = document.createElement("label");
+  commentLabel.append(document.createTextNode("Commentaire (facultatif)"));
+  const comment = document.createElement("textarea");
+  comment.maxLength = 500;
+  comment.rows = 2;
+  commentLabel.append(comment);
+  const error = document.createElement("p");
+  error.className = "ack-error";
+  error.setAttribute("role", "alert");
+  error.hidden = true;
+  const controls = document.createElement("div");
+  controls.className = "ack-controls";
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.textContent = "Confirmer";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Annuler";
+  controls.append(submit, cancel);
+  form.append(operatorLabel, commentLabel, error, controls);
+
+  ackButton.addEventListener("click", () => {
+    form.hidden = false;
+    ackButton.hidden = true;
+    operator.focus();
+  });
+  cancel.addEventListener("click", () => {
+    form.hidden = true;
+    ackButton.hidden = false;
+    error.hidden = true;
+    error.textContent = "";
+  });
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    acknowledgeIncident(incident.id, row);
+  });
+
+  action.append(ackButton, form);
+  el.append(who, what, when, detail, state, acknowledgement, action);
+  return { el, who, what, when, detail, state, acknowledgement, action, ackButton, form, operator, comment, error, submit, cancel };
+}
+
+function updateIncidentRow(row, incident) {
+  row.el.classList.toggle("acknowledged", Boolean(incident.acknowledgedAt));
+  row.who.textContent = incident.sensorId || "Unknown sensor";
+  row.what.textContent = metricLabel(incident.metric);
+  row.when.textContent = ago(incident.openedAt);
+  row.detail.textContent = incidentDetail(incident);
+  row.state.textContent = incident.acknowledgedAt
+    ? "● OPEN · ✓ ACKNOWLEDGED"
+    : "● OPEN · AWAITING ACKNOWLEDGEMENT";
+  row.acknowledgement.textContent = "";
+  row.action.hidden = Boolean(incident.acknowledgedAt);
+
+  if (incident.acknowledgedAt) {
+    const operator = incident.acknowledgedBy || "Unknown operator";
+    const summary = document.createElement("span");
+    summary.textContent = `✓ Acknowledged by ${operator} at ${hhmmss(incident.acknowledgedAt)}`;
+    row.acknowledgement.append(summary);
+    if (incident.comment) {
+      const comment = document.createElement("span");
+      comment.textContent = `Comment: ${incident.comment}`;
+      row.acknowledgement.append(comment);
+    }
+  }
+}
+
+async function acknowledgeIncident(id, row) {
+  row.error.hidden = true;
+  row.error.textContent = "";
+  row.submit.disabled = true;
+  row.cancel.disabled = true;
+  row.operator.disabled = true;
+  row.comment.disabled = true;
+  try {
+    const incident = await getJson(`/api/incidents/${encodeURIComponent(id)}/ack`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ operator: row.operator.value, comment: row.comment.value })
+    });
+    openIncidents = openIncidents.map(item => item.id === incident.id ? incident : item);
+    updateIncidentRow(row, incident);
+    poll();
+  } catch (e) {
+    row.error.textContent = e.message;
+    row.error.hidden = false;
+  } finally {
+    row.submit.disabled = false;
+    row.cancel.disabled = false;
+    row.operator.disabled = false;
+    row.comment.disabled = false;
+  }
 }
 
 function addFeed(kind, incident, at, flash) {
@@ -222,8 +354,13 @@ function addFeed(kind, incident, at, flash) {
   time.textContent = hhmmss(at);
   const text = document.createElement("span");
   const b = document.createElement("b");
-  b.textContent = (kind === "opened" ? "▲ " : "▼ ") + incident.sensorId + " " + metricLabel(incident.metric);
-  text.append(b, document.createTextNode(kind === "opened" ? " opened" : " closed"));
+  if (kind === "acknowledged") {
+    b.textContent = `✓ ${incident.sensorId || "Unknown sensor"} ${metricLabel(incident.metric)}`;
+    text.append(b, document.createTextNode(` acknowledged by ${incident.acknowledgedBy || "operator"}`));
+  } else {
+    b.textContent = (kind === "opened" ? "▲ " : "▼ ") + (incident.sensorId || "Unknown sensor") + " " + metricLabel(incident.metric);
+    text.append(b, document.createTextNode(kind === "opened" ? " opened" : " closed"));
+  }
   li.append(time, text);
   feed.prepend(li);
   while (feed.children.length > 30) feed.lastChild.remove();
@@ -251,8 +388,13 @@ function connectAlerts(delay = 1000) {
   ws.onmessage = msg => {
     try {
       const { event, incident } = JSON.parse(msg.data);
-      const opened = event === "incident.opened";
-      addFeed(opened ? "opened" : "closed", incident, opened ? incident.openedAt : incident.closedAt, true);
+      const kind = event === "incident.opened" ? "opened"
+        : event === "incident.acknowledged" ? "acknowledged"
+          : "closed";
+      const at = kind === "opened" ? incident.openedAt
+        : kind === "acknowledged" ? incident.acknowledgedAt
+          : incident.closedAt;
+      addFeed(kind, incident, at, true);
       poll();
     } catch (e) { /* ignore malformed */ }
   };
@@ -346,7 +488,10 @@ async function poll() {
     if (firstRender || sensors.some(s => !tiles.has(s.id))) {
       tiles.clear();
       if (sensors.length === 0) {
-        $("#sites").innerHTML = '<p class="loading">No sensors registered yet. Is the dev-seed service done?</p>';
+        const message = document.createElement("p");
+        message.className = "loading";
+        message.textContent = "No sensors registered yet. Is the dev-seed service done?";
+        $("#sites").replaceChildren(message);
       } else {
         buildSites(sensors);
         firstRender = false;

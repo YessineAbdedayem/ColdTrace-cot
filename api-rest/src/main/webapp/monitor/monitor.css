@@ -276,6 +276,30 @@ button:focus-visible { outline: 2px solid var(--frost); outline-offset: 2px; }
 .incident .what { font: 600 14px var(--f-ui); text-transform: uppercase; letter-spacing: 0.08em; color: var(--frost); }
 .incident .when { font: 400 11px var(--f-mono); color: var(--mist); text-align: right; }
 .incident .detail { grid-column: 1 / -1; font: 400 11px var(--f-mono); color: var(--mist); }
+.incident-state, .acknowledgement, .ack-action { grid-column: 1 / -1; }
+.incident-state { font: 700 10px var(--f-mono); letter-spacing: 0.08em; color: var(--amber); }
+.incident.acknowledged .incident-state { color: var(--frost); }
+.acknowledgement { display: grid; gap: 4px; font: 400 11px/1.45 var(--f-mono); color: var(--ice); }
+.acknowledgement span { overflow-wrap: anywhere; }
+.btn-ack, .ack-controls button {
+  font: 700 12px var(--f-ui); text-transform: uppercase; letter-spacing: 0.1em;
+  padding: 6px 10px; color: var(--steel-950); background: var(--frost);
+  border: 1px solid var(--frost); border-radius: 2px; cursor: pointer;
+}
+.btn-ack:disabled, .ack-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+.ack-form { display: grid; gap: 8px; margin-top: 8px; }
+.ack-form[hidden], .ack-action[hidden] { display: none; }
+.ack-form label { display: grid; gap: 4px; font: 400 10px var(--f-mono); color: var(--mist); }
+.ack-form input, .ack-form textarea {
+  width: 100%; padding: 7px; color: var(--ice); background: var(--steel-950);
+  border: 1px solid var(--hairline); border-radius: 2px; font: 400 12px var(--f-mono);
+}
+.ack-form input:focus, .ack-form textarea:focus { outline: 1px solid var(--frost); }
+.ack-controls { display: flex; gap: 8px; }
+.ack-controls button[type="button"] { color: var(--mist); background: transparent; border-color: var(--hairline); }
+.ack-error { margin: 0; color: var(--hazard); font: 400 11px var(--f-mono); }
+.ack-error[hidden] { display: none; }
+.demo-note { margin: 0 0 8px; color: var(--amber); font: 400 10px/1.45 var(--f-mono); }
 
 .feed li {
   display: grid; grid-template-columns: 64px 1fr; gap: 8px;
@@ -286,6 +310,7 @@ button:focus-visible { outline: 2px solid var(--frost); outline-offset: 2px; }
 .feed li b { color: var(--ice); font-weight: 500; }
 .feed li.opened b { color: var(--hazard); }
 .feed li.closed b { color: var(--frost); }
+.feed li.acknowledged b { color: var(--amber); }
 .feed li.flash { background: rgba(255, 91, 26, 0.14); }
 
 .empty { font: 400 12px var(--f-mono); color: var(--frost); margin: 6px 0 0; }

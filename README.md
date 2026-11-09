@@ -175,6 +175,22 @@ Invoke-RestMethod -Method Post -Uri 'http://localhost:4000/faults' -ContentType 
   dont la `peakValue` continue de monter ;
 - le journal de l'API affiche `Incident opened: S01 door=1.0`, puis `Incident opened: S01 temperature=...`.
 
+### 5 bis. Acquitter un incident ouvert
+
+Récupérer l'identifiant de l'incident `door` de S01 dans
+`GET /api/incidents?status=open`, puis remplacer `<id>` dans la commande :
+
+```bash
+curl -X POST http://localhost:8080/api/incidents/<id>/ack \
+  -H 'Content-Type: application/json' \
+  -d '{"operator":"Yessine","comment":"Vérification de la porte en cours"}'
+```
+
+**Attendu :** l'incident reste `status: "open"` et contient `acknowledgedAt`,
+`acknowledgedBy: "Yessine"` et le commentaire. Il se fermera automatiquement
+quand le capteur reviendra à la normale. Le nom saisi est une valeur de
+démonstration : il n'est pas authentifié.
+
 ### 6. Le congélateur se réchauffe → incident `temperature`
 
 ```bash

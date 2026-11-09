@@ -35,12 +35,21 @@ src/main/webapp/
 | `GET /api/health` | `{"status":"ok"}` |
 | `GET /api/sensors` | every sensor with its profile limits, latest reading and last 24 temperatures (oldest first) |
 | `GET /api/incidents?status=open\|closed&limit=50` | incidents, newest first (`limit` up to 200; no `status` = both) |
+| `POST /api/incidents/{id}/ack` | acknowledges an open incident with `{"operator":"Yessine","comment":"Door checked"}` |
 | `GET /api/gateways` | latest status and counters of each site's gateway |
 | `GET /api/dev/faults` | **dev only**: the simulator's sensors and their active fault |
 | `POST /api/dev/faults` | **dev only**: `{"sensorId":"S01","fault":"door_open"}` (or `siteId`); faults: `door_open`, `temp_rise`, `silent`, `none` |
 | `POST /api/dev/faults/clear` | **dev only**: clears every fault |
 
 The read endpoints have no login yet: that comes with Jakarta Security.
+
+Acknowledgement input requires an `operator` name (trimmed, 1–64 characters).
+`comment` is optional (trimmed, at most 500 characters). The endpoint returns
+the updated incident with `acknowledgedAt`, `acknowledgedBy` and `comment`;
+invalid input or an invalid ObjectId returns `400`, an unknown incident returns
+`404`, and an already acknowledged or closed incident returns `409`.
+Acknowledgement does not close an incident or alter its automatic recovery
+rules. The typed operator name is a **demo value, not an authenticated identity**.
 
 The `/api/dev/faults` endpoints forward to the simulator's control API. The browser cannot call the simulator itself:
 it is another origin and has no CORS. They are **off (404) unless `SIM_CONTROL_URL` is set**. The Compose stack sets it
@@ -108,7 +117,8 @@ Besides temperature and humidity, two more metrics need no profile limits:
 - One reading outside the limits opens an incident in `coldtrace.incidents`, one per sensor and metric.
 - Three consecutive in-range readings close it. A new breach during those readings keeps it open.
 - A `silence` incident closes as soon as the sensor sends a reading again.
-- Connected clients of `ws://<host>:8080/ws/alerts` receive JSON when an incident opens or closes. The endpoint has no
+- Connected clients of `ws://<host>:8080/ws/alerts` receive JSON when an incident opens, is acknowledged
+  (`incident.acknowledged`) or closes. The acknowledgement event contains the updated incident. The endpoint has no
   login yet.
 
 ```json
