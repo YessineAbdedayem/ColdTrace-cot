@@ -2,7 +2,9 @@ package tn.supcom.coldtrace.db;
 
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -11,6 +13,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.Startup;
 import jakarta.enterprise.inject.Produces;
+import org.bson.Document;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -33,9 +36,14 @@ public class MongoProducer {
     /** Runs before the MQTT listener (lower priority value = earlier). */
     void onStartup(@Observes @Priority(1) Startup event) {
         try {
-            database().getCollection("measurements")
-                    .createIndex(Indexes.compoundIndex(Indexes.ascending("sensorId"), Indexes.descending("ts")));
-            LOG.info("MongoDB ready, index measurements(sensorId asc, ts desc) ensured");
+            // Same names and keys as gateway-iot/mongo/init-app-user.sh, so both can run on one database.
+            MongoCollection<Document> measurements = database().getCollection("measurements");
+            measurements.createIndex(Indexes.ascending("msgId"),
+                    new IndexOptions().unique(true).name("msgId_unique"));
+            measurements.createIndex(
+                    Indexes.compoundIndex(Indexes.ascending("siteId", "sensorId"), Indexes.descending("ts")),
+                    new IndexOptions().name("site_sensor_ts"));
+            LOG.info("MongoDB ready, measurements indexes ensured");
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "Could not create MongoDB index (is MongoDB reachable?)", e);
         }

@@ -1,6 +1,10 @@
 package tn.supcom.coldtrace.mqtt;
 
+import com.mongodb.ErrorCategory;
+import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.Filters;
+import com.mongodb.client.model.UpdateOptions;
 import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Priority;
 import jakarta.annotation.Resource;
@@ -20,6 +24,8 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
+import org.bson.Document;
+import tn.supcom.coldtrace.model.GatewayStatus;
 import tn.supcom.coldtrace.model.Measurement;
 
 import javax.net.ssl.SSLContext;
@@ -34,12 +40,14 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Subscribes to sensor readings on Mosquitto and stores each valid one in coldtrace.measurements.
+ * Subscribes to the gateways' messages on Mosquitto. Each valid reading goes to coldtrace.measurements,
+ * and the latest status of each site's gateway goes to coldtrace.gateways.
  *
  * Env: MQTT_URL (default tcp://localhost:1883), MQTT_USER, MQTT_PASSWORD, MQTT_CA_PATH (PEM, optional).
  */
@@ -48,8 +56,10 @@ public class MqttListener implements MqttCallbackExtended {
 
     private static final Logger LOG = Logger.getLogger(MqttListener.class.getName());
     private static final String CLIENT_ID = "coldtrace-api";
-    private static final String TOPIC = "coldtrace/+/+/measurements";
-    private static final int QOS = 1;
+    private static final String STATUS_SUFFIX = "/gateway/status";
+    private static final String[] TOPICS = {"coldtrace/+/+/telemetry", "coldtrace/+" + STATUS_SUFFIX};
+    private static final int[] QOS = {1, 1};
+    private static final Set<String> GATEWAY_STATES = Set.of("online", "offline");
     private static final long RETRY_SECONDS = 5;
 
     @Inject
@@ -128,19 +138,19 @@ public class MqttListener implements MqttCallbackExtended {
     public void connectComplete(boolean reconnect, String serverURI) {
         LOG.info((reconnect ? "Reconnected" : "Connected") + " to MQTT broker " + serverURI);
         try {
-            client.subscribe(TOPIC, QOS, null, new IMqttActionListener() {
+            client.subscribe(TOPICS, QOS, null, new IMqttActionListener() {
                 @Override
                 public void onSuccess(IMqttToken token) {
-                    LOG.info("Subscribed to " + TOPIC + " (QoS " + QOS + ")");
+                    LOG.info("Subscribed to " + String.join(", ", TOPICS) + " (QoS 1)");
                 }
 
                 @Override
                 public void onFailure(IMqttToken token, Throwable e) {
-                    LOG.log(Level.SEVERE, "Subscribe to " + TOPIC + " failed", e);
+                    LOG.log(Level.SEVERE, "Subscribe to " + String.join(", ", TOPICS) + " failed", e);
                 }
             });
         } catch (MqttException e) {
-            LOG.log(Level.SEVERE, "Subscribe to " + TOPIC + " failed", e);
+            LOG.log(Level.SEVERE, "Subscribe to " + String.join(", ", TOPICS) + " failed", e);
         }
     }
 
@@ -154,40 +164,98 @@ public class MqttListener implements MqttCallbackExtended {
         // Never let an exception escape: Paho would drop the connection.
         try {
             String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
-            Measurement m;
-            try {
-                m = jsonb.fromJson(payload, Measurement.class);
-            } catch (RuntimeException e) {
-                LOG.warning("Rejected message on " + topic + ": invalid JSON: " + payload);
-                return;
+            if (topic.endsWith(STATUS_SUFFIX)) {
+                storeGatewayStatus(topic, payload);
+            } else {
+                storeMeasurement(topic, payload);
             }
-            String error = validate(m);
-            if (error != null) {
-                LOG.warning("Rejected message on " + topic + ": " + error + ": " + payload);
-                return;
-            }
-            db.getCollection("measurements").insertOne(m.toDocument());
         } catch (Exception e) {
             LOG.log(Level.SEVERE, "Failed to store message from " + topic, e);
+        }
+    }
+
+    private void storeMeasurement(String topic, String payload) {
+        Measurement m = parse(topic, payload, Measurement.class);
+        if (m == null) {
+            return;
+        }
+        String error = validate(m);
+        if (error != null) {
+            LOG.warning("Rejected message on " + topic + ": " + error + ": " + payload);
+            return;
+        }
+        try {
+            db.getCollection("measurements").insertOne(m.toDocument());
+        } catch (MongoWriteException e) {
+            if (e.getError().getCategory() != ErrorCategory.DUPLICATE_KEY) {
+                throw e;
+            }
+            // QoS 1 and gateway replay can deliver a reading twice: the unique msgId index keeps one copy.
+            LOG.fine("Ignored duplicate reading " + m.getMsgId());
+        }
+    }
+
+    private void storeGatewayStatus(String topic, String payload) {
+        GatewayStatus s = parse(topic, payload, GatewayStatus.class);
+        if (s == null) {
+            return;
+        }
+        String error = validate(s);
+        if (error != null) {
+            LOG.warning("Rejected message on " + topic + ": " + error + ": " + payload);
+            return;
+        }
+        // The birth and last-will messages have no site id, so it always comes from the topic.
+        String siteId = topic.split("/")[1];
+        db.getCollection("gateways").updateOne(
+                Filters.eq("_id", siteId),
+                new Document("$set", s.toDocument()),
+                new UpdateOptions().upsert(true));
+    }
+
+    /** Returns the parsed payload, or null after logging if it is not valid JSON for that type. */
+    private <T> T parse(String topic, String payload, Class<T> type) {
+        try {
+            return jsonb.fromJson(payload, type);
+        } catch (RuntimeException e) {
+            LOG.warning("Rejected message on " + topic + ": invalid JSON: " + payload);
+            return null;
         }
     }
 
     /** Returns why the reading must be rejected, or null if it is valid. */
     static String validate(Measurement m) {
         if (m == null) return "empty payload";
-        if (isBlank(m.getSensorId())) return "missing sensorId";
+        if (m.getV() == null) return "missing v";
+        if (m.getV() != Measurement.FORMAT_VERSION) return "unsupported format version " + m.getV();
+        if (isBlank(m.getMsgId())) return "missing msgId";
         if (isBlank(m.getSiteId())) return "missing siteId";
-        if (isBlank(m.getType())) return "missing type";
-        if (!Measurement.TYPES.contains(m.getType())) return "unknown type '" + m.getType() + "'";
-        if (m.getValue() == null) return "missing value";
-        if (isBlank(m.getUnit())) return "missing unit";
-        if (isBlank(m.getTs())) return "missing ts";
-        try {
-            Instant.parse(m.getTs());
-        } catch (DateTimeParseException e) {
-            return "ts is not ISO-8601";
+        if (isBlank(m.getSensorId())) return "missing sensorId";
+        if (m.getTemperature() == null && m.getHumidity() == null && m.getDoorOpen() == null) {
+            return "no temperature, humidity or doorOpen";
         }
+        if (isBlank(m.getTs())) return "missing ts";
+        if (!isIsoInstant(m.getTs())) return "ts is not ISO-8601";
+        if (m.getReceivedAt() != null && !isIsoInstant(m.getReceivedAt())) return "receivedAt is not ISO-8601";
         return null;
+    }
+
+    /** Returns why the status must be rejected, or null if it is valid. */
+    static String validate(GatewayStatus s) {
+        if (s == null) return "empty payload";
+        if (isBlank(s.getStatus())) return "missing status";
+        if (!GATEWAY_STATES.contains(s.getStatus())) return "unknown status '" + s.getStatus() + "'";
+        if (s.getTs() != null && !isIsoInstant(s.getTs())) return "ts is not ISO-8601";
+        return null;
+    }
+
+    private static boolean isIsoInstant(String value) {
+        try {
+            Instant.parse(value);
+            return true;
+        } catch (DateTimeParseException e) {
+            return false;
+        }
     }
 
     @Override
