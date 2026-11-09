@@ -3,8 +3,9 @@
 Back-end skeleton for ColdTrace:
 
 - `GET /api/health` returns `{"status":"ok"}`
-- an MQTT listener subscribes to `coldtrace/+/+/measurements` (QoS 1) on Mosquitto and stores every
-  valid reading in MongoDB, in the `coldtrace.measurements` collection (index: `sensorId` asc, `ts` desc)
+- an MQTT listener subscribes to `coldtrace/+/+/telemetry` and `coldtrace/+/gateway/status` (QoS 1) on Mosquitto
+- every valid reading is stored in `coldtrace.measurements` (indexes: unique `msgId`; `siteId`, `sensorId`, `ts` desc)
+- the latest status of each site's gateway is kept in `coldtrace.gateways`, with the site id as `_id`
 
 Stack: Java 21, Jakarta EE 11 (`jakarta.jakartaee-api` 11.0.0), WildFly 42 (`quay.io/wildfly/wildfly:42.0.0.Final-jdk21`),
 MongoDB Java driver 5.14 (sync), Eclipse Paho MQTT v3 1.2.5.
@@ -13,23 +14,30 @@ MongoDB Java driver 5.14 (sync), Eclipse Paho MQTT v3 1.2.5.
 src/main/java/tn/supcom/coldtrace/
 ├── RestApplication.java     # @ApplicationPath("/api")
 ├── HealthResource.java      # GET /api/health
-├── model/                   # Site, Sensor, Measurement (toDocument / fromDocument)
+├── model/                   # Site, Sensor, Measurement, GatewayStatus
 ├── db/MongoProducer.java    # MongoClient + MongoDatabase "coldtrace" producer, index creation
-└── mqtt/MqttListener.java   # Paho subscriber -> measurements collection
+└── mqtt/MqttListener.java   # Paho subscriber -> measurements and gateways collections
 ```
 
 ## Message format
 
-Topic `coldtrace/{siteId}/{sensorId}/measurements`, one reading per message:
+The API reads the messages the gateway sends, defined in
+[gateway-iot/MESSAGE-FORMAT.md](../gateway-iot/MESSAGE-FORMAT.md). Topic `coldtrace/{siteId}/{sensorId}/telemetry`:
 
 ```json
-{"sensorId":"S01","siteId":"SITE1","type":"temperature","value":2.4,"unit":"C","ts":"2026-11-02T20:15:00Z"}
+{"v":1,"msgId":"site01-S01-1793632152000","siteId":"site01","sensorId":"S01","gatewayId":"gw-site01","ts":"2026-11-02T15:09:12.000Z","tsSource":"sensor","temperature":4.2,"humidity":61.5,"doorOpen":false,"receivedAt":"2026-11-02T15:09:12.185Z"}
 ```
 
-- `type` is `temperature`, `humidity` or `door`.
-- `ts` is ISO-8601 in the payload and stored as a BSON date.
-- A message with a missing field, an unknown `type`, a bad `ts` or invalid JSON is rejected and logged as a WARNING.
-  It is not stored.
+- `v`, `msgId`, `siteId`, `sensorId`, `ts` and at least one of `temperature`, `humidity`, `doorOpen` are required.
+- `ts` and `receivedAt` are ISO-8601 in the payload and stored as BSON dates.
+- A message with a missing field, another format version, a bad date or invalid JSON is rejected and logged as a
+  WARNING. It is not stored.
+- A reading whose `msgId` is already stored is ignored, because a reading can arrive twice after a reconnect.
+
+## Tests
+
+`mvn test` needs JDK 21 or later. The tests check the API against the example messages in the format document, and
+they also run during `docker build`.
 
 ## How to build and run
 
@@ -114,7 +122,8 @@ curl http://localhost:8080/api/health
 # {"status":"ok"}
 ```
 
-The log should show `Connected to MQTT broker ...` and `Subscribed to coldtrace/+/+/measurements (QoS 1)`.
+The log should show `Connected to MQTT broker ...` and
+`Subscribed to coldtrace/+/+/telemetry, coldtrace/+/gateway/status (QoS 1)`.
 
 ### 4. Test with mosquitto_pub
 
@@ -124,11 +133,11 @@ For a local test only, Mosquitto 2 needs a config that allows anonymous clients 
 Publish a valid reading and an invalid one (from the Mosquitto container, so no local install is needed):
 
 ```bash
-docker exec mosquitto mosquitto_pub -h localhost -q 1 -t coldtrace/SITE1/S01/measurements \
-  -m '{"sensorId":"S01","siteId":"SITE1","type":"temperature","value":2.4,"unit":"C","ts":"2026-11-02T20:15:00Z"}'
+docker exec mosquitto mosquitto_pub -h localhost -q 1 -t coldtrace/site01/S01/telemetry \
+  -m '{"v":1,"msgId":"test-1","siteId":"site01","sensorId":"S01","ts":"2026-11-02T20:15:00Z","temperature":2.4}'
 
-docker exec mosquitto mosquitto_pub -h localhost -q 1 -t coldtrace/SITE1/S01/measurements \
-  -m '{"sensorId":"S01","siteId":"SITE1","type":"pressure","value":1,"unit":"bar","ts":"2026-11-02T20:16:00Z"}'
+docker exec mosquitto mosquitto_pub -h localhost -q 1 -t coldtrace/site01/S01/telemetry \
+  -m '{"v":2,"msgId":"test-2","siteId":"site01","sensorId":"S01","ts":"2026-11-02T20:16:00Z","temperature":2.4}'
 ```
 
 The second one shows up as a WARNING in `docker logs coldtrace-api`. Check what was stored:
