@@ -5,7 +5,7 @@
 #   simulator    : fake sensors and localhost-only fault control API
 #   mongo        : local database for the backend
 #   dev-seed     : registers the simulated sensors in MongoDB, then exits
-#   api          : Jakarta EE backend, built from ../api-rest
+#   api          : Jakarta EE backend, built from ../middleware/api
 #
 # Before the first start:  cp .env.example .env   and   ./scripts/gen-certs.sh
 # Start:                    docker compose up -d
@@ -114,7 +114,7 @@ services:
     restart: "no"
 
   api:
-    build: ../api-rest
+    build: ../middleware/api
     image: coldtrace-api
     depends_on:
       cloud-broker:

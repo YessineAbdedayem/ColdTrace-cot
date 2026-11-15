@@ -22,7 +22,7 @@ Example: `coldtrace/site01/S01/telemetry`.
 ```
 
 - The site and sensor ids come from the topic, not the message. Other
-  protocols give them through their adapter (see "Adding a protocol" in README.md).
+  protocols give them through their adapter (see [Adding a protocol](../gateway-iot/README.md#adding-a-protocol)).
 - `ts` is optional: Unix time in seconds (or milliseconds, or an ISO date).
   If it is missing or clearly wrong (an ESP32 without NTP sends 1970),
   the gateway uses its own clock.

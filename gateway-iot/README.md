@@ -15,7 +15,7 @@ The gateway sits on each site. It:
 
 No hardware yet, so everything runs on a laptop with Docker, and a
 simulator plays the ESP32 sensors. The message format is a **draft**:
-see [MESSAGE-FORMAT.md](MESSAGE-FORMAT.md).
+see [MESSAGE-FORMAT.md](../docs/MESSAGE-FORMAT.md).
 
 ## What's in this folder
 
@@ -32,7 +32,7 @@ see [MESSAGE-FORMAT.md](MESSAGE-FORMAT.md).
 | `node-red/flows.json` | the gateway flow |
 | `node-red/settings.js` | Node-RED settings (disk storage for the buffer) |
 | `simulator/` | ten fake sensors, fault-control API and model tests |
-| `MESSAGE-FORMAT.md` | topics and JSON format (draft) |
+| `../docs/MESSAGE-FORMAT.md` | topics and JSON format (draft), shared documentation outside this folder |
 
 ## Run it
 
@@ -181,7 +181,7 @@ NEW in  ─▶ NEW adapter  ─▶ ┘
    | Property | Value |
    |---|---|
    | `msg.source` | `{ protocol: "http", siteId: "site01", sensorId: "S01" }` |
-   | `msg.payload` | the reading as in MESSAGE-FORMAT.md (JSON text, Buffer or object) |
+   | `msg.payload` | the reading as in [MESSAGE-FORMAT.md](../docs/MESSAGE-FORMAT.md) (JSON text, Buffer or object) |
 
    If the protocol doesn't carry the site id, use `env.get("SITE_ID")`.
 3. Connect it to a "link out" node pointing to **Gateway input**.
@@ -221,7 +221,7 @@ or at least a password on the site broker once real ESP32s are on the network.
 
 - **Raspberry Pi**: same `docker compose up`, without the `simulator` service.
 - **Real ESP32**: publish to `coldtrace/{siteId}/{sensorId}/telemetry` on the
-  site broker (port 1883) with the JSON in MESSAGE-FORMAT.md.
+  site broker (port 1883) with the JSON in [MESSAGE-FORMAT.md](../docs/MESSAGE-FORMAT.md).
 - **Real cloud server**: copy `mosquitto/cloud/` and `certs/` there, run
   `./scripts/gen-certs.sh <server-ip-or-name>` so the certificate matches its
   address, and set `CLOUD_BROKER_HOST` in the gateway's `.env`.

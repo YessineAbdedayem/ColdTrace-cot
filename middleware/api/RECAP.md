@@ -1,6 +1,6 @@
 # ColdTrace back-end: recap
 
-**Scope:** `api-rest/`, the Jakarta EE 11 back-end
+**Scope:** `middleware/api/`, the Jakarta EE 11 back-end
 **Owner of the back-end skeleton:** Oussema Kard
 **Contributions:** Khalil Hedhili (gateway message format, alert engine, Compose integration)
 **Date:** 9 November 2026
@@ -23,14 +23,14 @@ The REST endpoints (sites, sensors, history, incidents) are the next task. For n
 
 ```
 ESP32 / simulator ──> site broker ──> Node-RED gateway ──MQTTS──> cloud broker ──> coldtrace-api ──> MongoDB
-                        (gateway-iot/)                            (port 8883)      (api-rest/)    └──> WebSocket /ws/alerts
+                        (gateway-iot/)                            (port 8883)      (middleware/api/)    └──> WebSocket /ws/alerts
 ```
 
 | Who | What |
 |---|---|
-| Khalil | IoT gateway (Node-RED flow, offline buffering, message format); in `api-rest`: v1 message contract, gateway status, alert engine, WebSocket, Compose integration, tests |
+| Khalil | IoT gateway (Node-RED flow, offline buffering, message format); in `middleware/api`: v1 message contract, gateway status, alert engine, WebSocket, Compose integration, tests |
 | Yessine | Local dev stack: MongoDB init script, TLS certificates, broker accounts and ACL, multi-site simulator with a fault API |
-| Oussema | `api-rest` skeleton: Maven/WildFly project, Docker image, MongoDB access, MQTT listener; then MQTTS defaults, ids from the topic, door-open and silent-sensor incidents, documentation |
+| Oussema | `middleware/api` skeleton: Maven/WildFly project, Docker image, MongoDB access, MQTT listener; then MQTTS defaults, ids from the topic, door-open and silent-sensor incidents, documentation |
 
 ## 3. Technologies and versions
 
@@ -50,7 +50,7 @@ No extra frameworks: no Spring, no Quarkus, no Lombok.
 ## 4. Project structure
 
 ```
-api-rest/
+middleware/api/
 ├── pom.xml                          # WAR "coldtrace-api", Java 21, dependencies, test dependencies
 ├── Dockerfile                       # stage 1: Maven build + tests, stage 2: WildFly 42 + ROOT.war
 ├── README.md                        # how to build, configure, run and test
@@ -71,7 +71,7 @@ api-rest/
     │   │   └── AlertEvent.java              # JSON pushed to clients
     │   └── model/                           # Measurement, GatewayStatus, Incident, Threshold, Sensor, Site
     └── test/java/tn/supcom/coldtrace/
-        ├── mqtt/GatewayContractTest.java    # the message examples of MESSAGE-FORMAT.md
+        ├── mqtt/GatewayContractTest.java    # the message examples of docs/MESSAGE-FORMAT.md
         └── alert/AlertRulesTest.java        # limits, anti-flapping, door, silence, JSON of an alert
 ```
 
@@ -183,7 +183,7 @@ conflict.
 ## 8. Tests and verification
 
 **Unit tests** (`mvn test`, also run by `docker build`): **16 tests, 0 failures**.
-- `GatewayContractTest` (7): the message examples of `MESSAGE-FORMAT.md`.
+- `GatewayContractTest` (7): the message examples of [docs/MESSAGE-FORMAT.md](../../docs/MESSAGE-FORMAT.md).
 - `AlertRulesTest` (9): limits, anti-flapping, door, silence, alert JSON.
 
 **Against the team's real stack** (5 containers + the API on the `coldtrace-gateway_default` network):

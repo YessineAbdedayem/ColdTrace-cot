@@ -33,14 +33,23 @@ Deux applications PWA sont prévues :
 ```
 .
 ├── README.md
-├── livrable1-cahier-des-charges/   # Cahier des charges (PDF + source LaTeX)
-├── livrable2-cahier-conceptuel/    # À venir
-├── api-rest/                       # Jakarta EE 11 : ingestion MQTT, alertes, WebSocket
-├── pwa-front-office/               # À venir
-├── pwa-back-office/                # À venir
-├── gateway-iot/                    # Prototype fonctionnel : Node-RED, brokers MQTT, simulateur
-└── docs/                           # À venir : documentation technique, manuel, vidéos
+├── docs/                          # Cahier des charges LaTeX, PDF et format des messages
+├── frontends/
+│   ├── front-office/              # Réservé à la future PWA
+│   └── back-office/               # Réservé à la future PWA
+├── middleware/
+│   ├── api/                       # Projet Maven existant : ingestion, alertes, REST, WebSocket et /monitor/
+│   ├── core/                      # Réservé ; aucun module Maven pour le moment
+│   └── iam/                       # Réservé ; aucune authentification implémentée ici
+└── gateway-iot/                    # Node-RED, brokers MQTT, simulateur et stack Docker Compose
 ```
+
+Le backend reste un seul projet Maven dans `middleware/api/`. Son moteur d'alertes et sa page de démonstration
+`/monitor/` restent intégrés à ce projet. Les dossiers réservés contiennent uniquement un `.gitkeep`.
+
+Le [format des messages](docs/MESSAGE-FORMAT.md), le [cahier des charges](docs/cahier_des_charges_coldtrace_v3.tex),
+le [document Cloud of Things](docs/Cloud_of_Things.pdf) et l'[explication de la passerelle](docs/Gateway-explained.pdf)
+sont regroupés dans `docs/`.
 
 ## Avancement des livrables
 
@@ -64,7 +73,8 @@ simulateur ──> site-broker ──> node-red (passerelle) ──MQTTS──> 
 - **Où lancer :** les commandes se lancent depuis `gateway-iot/`.
 - **Shell :** elles sont écrites pour Git Bash. Sous PowerShell, l'API de pannes du simulateur s'appelle avec
   `Invoke-RestMethod`, comme au test 5.
-- **Plus de détails :** `gateway-iot/README.md` décrit la passerelle et `api-rest/README.md` décrit l'API.
+- **Plus de détails :** [gateway-iot/README.md](gateway-iot/README.md) décrit la passerelle et
+  [middleware/api/README.md](middleware/api/README.md) décrit l'API.
 
 ### 0. Démarrer et lancer les vérifications automatiques
 

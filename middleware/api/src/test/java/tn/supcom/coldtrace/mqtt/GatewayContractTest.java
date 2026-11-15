@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-/** Checks the API against the example messages in gateway-iot/MESSAGE-FORMAT.md. */
+/** Checks the API against the example messages in docs/MESSAGE-FORMAT.md. */
 class GatewayContractTest {
 
     private static final String READING = """

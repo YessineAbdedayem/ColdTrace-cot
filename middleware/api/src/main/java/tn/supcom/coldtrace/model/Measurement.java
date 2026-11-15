@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.Date;
 
 /**
- * One gateway reading, in the format defined by gateway-iot/MESSAGE-FORMAT.md.
+ * One gateway reading, in the format defined by docs/MESSAGE-FORMAT.md.
  * In the MQTT payload {@code ts} and {@code receivedAt} are ISO-8601 strings;
  * in MongoDB they are stored as BSON dates. Absent optional fields are not stored.
  */

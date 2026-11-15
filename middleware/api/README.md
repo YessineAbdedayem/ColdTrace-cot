@@ -77,7 +77,7 @@ it to `/noredirect.html`.
 ## Message format
 
 The API reads the messages the gateway sends, defined in
-[gateway-iot/MESSAGE-FORMAT.md](../gateway-iot/MESSAGE-FORMAT.md). Topic `coldtrace/{siteId}/{sensorId}/telemetry`:
+[docs/MESSAGE-FORMAT.md](../../docs/MESSAGE-FORMAT.md). Topic `coldtrace/{siteId}/{sensorId}/telemetry`:
 
 ```json
 {"v":1,"msgId":"site01-S01-1793632152000","siteId":"site01","sensorId":"S01","gatewayId":"gw-site01","ts":"2026-11-02T15:09:12.000Z","tsSource":"sensor","temperature":4.2,"humidity":61.5,"doorOpen":false,"receivedAt":"2026-11-02T15:09:12.185Z"}
@@ -129,7 +129,7 @@ Besides temperature and humidity, two more metrics need no profile limits:
 
 `mvn test` needs JDK 21 or later. The tests check the API against the example messages in the format document, and
 they also run during `docker build`. To test the whole system by hand (readings, incidents, WebSocket, outage), see
-[Tester le système pas à pas](../README.md#tester-le-système-pas-à-pas) in the root README.
+[Tester le système pas à pas](../../README.md#tester-le-système-pas-à-pas) in the root README.
 
 ## How to build and run
 
@@ -139,7 +139,7 @@ The steps below run the API on its own.
 ### 1. Build the image
 
 ```bash
-cd api-rest
+cd middleware/api
 docker build -t coldtrace-api .
 ```
 
@@ -181,7 +181,7 @@ docker compose up -d --build  # API on http://localhost:8080 (set API_PORT in .e
 **Stop the Compose `api` service first** (`docker compose stop api`): both would use the MQTT client id
 `coldtrace-api` and would keep disconnecting each other.
 
-1. Create `api-rest/.env` (ignored by git), with the values from `gateway-iot/.env`:
+1. Create `middleware/api/.env` (ignored by git), with the values from `gateway-iot/.env`:
    ```properties
    MQTT_URL=ssl://cloud-broker:8883
    MQTT_USER=backend
@@ -191,12 +191,12 @@ docker compose up -d --build  # API on http://localhost:8080 (set API_PORT in .e
    ```
    Keep `mongo` as the host here: it is the container's name on the Docker network. Only a tool running on your
    machine, such as MongoDB Compass, uses `localhost:27017`.
-2. Join the gateway's network and mount the CA read-only (from `api-rest/`):
+2. Join the gateway's network and mount the CA read-only (from `middleware/api/`):
    ```bash
    docker run -d --name coldtrace-api --network coldtrace-gateway_default -p 18080:8080 \
-     --env-file .env -v "$(pwd)/../gateway-iot/certs/ca.crt:/certs/ca.crt:ro" coldtrace-api
+     --env-file .env -v "$(pwd)/../../gateway-iot/certs/ca.crt:/certs/ca.crt:ro" coldtrace-api
    ```
-   PowerShell: replace the `\` line endings with a backtick, and use `-v "${PWD}\..\gateway-iot\certs\ca.crt:/certs/ca.crt:ro"`.
+   PowerShell: replace the `\` line endings with a backtick, and use `-v "${PWD}\..\..\gateway-iot\certs\ca.crt:/certs/ca.crt:ro"`.
    After a change to `.env`, re-create the container (`docker rm -f coldtrace-api`, then `docker run` again):
    `docker restart` keeps the old settings.
 
