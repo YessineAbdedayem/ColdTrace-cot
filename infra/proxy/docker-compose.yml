@@ -1,0 +1,20 @@
+# ColdTrace reverse proxy (dev).
+# Start the team stack first (gateway-iot), then from this folder:  docker compose up -d
+# It joins the stack's network and reaches the services by their Compose names.
+
+name: coldtrace-proxy
+
+services:
+  proxy:
+    image: nginx:stable-alpine
+    ports:
+      - "127.0.0.1:80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [coldtrace]
+    restart: unless-stopped
+
+networks:
+  coldtrace:
+    external: true
+    name: coldtrace-gateway_default
