@@ -40,11 +40,10 @@ Deux applications clientes sont prévues :
 ├── middleware/
 │   ├── api/                       # Projet Maven existant : ingestion, alertes, REST et WebSocket
 │   ├── core/                      # Réservé ; aucun module Maven pour le moment
-│   └── iam/                       # Réservé ; aucune authentification implémentée ici
+│   ├── iam/                       # Réservé ; aucune authentification implémentée ici
+│   └── proxy/                     # Proxy inverse Nginx : coldtrace.test, api.coldtrace.test, mlflow.coldtrace.test
 ├── gateway-iot/                    # Node-RED, brokers MQTT, simulateur et stack Docker Compose
 ├── mlops/                         # Pipeline MLOps : données, entraînement, MLflow, API du modèle, CI (voir son README)
-├── infra/
-│   └── proxy/                      # Proxy inverse Nginx : coldtrace.test, api.coldtrace.test, mlflow.coldtrace.test
 └── .github/workflows/mlops.yml     # CI GitHub Actions du pipeline MLOps
 ```
 

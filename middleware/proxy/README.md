@@ -39,7 +39,7 @@ Start the team stack first, because the proxy joins its Docker network (`coldtra
 ```powershell
 cd gateway-iot
 docker compose up -d
-cd ..\infra\proxy
+cd ..\middleware\proxy
 docker compose up -d
 ```
 

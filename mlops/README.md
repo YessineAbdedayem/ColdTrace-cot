@@ -120,7 +120,7 @@ Outputs in `mlops/data/`:
 ## MLflow: tracking and model registry (step 5)
 
 MLflow runs as a container (`mlflow`, version 2.18) and keeps everything in the `mlflow-data` Docker volume. Open it at
-**http://mlflow.coldtrace.test**, through `infra/proxy`.
+**http://mlflow.coldtrace.test**, through `middleware/proxy`.
 
 Each `train.py` run is logged to the **`coldtrace-early-warning`** experiment with:
 - **parameters:** LightGBM settings, chosen margin, rounds kept, data size, start of the test period;
@@ -244,7 +244,7 @@ curl http://localhost:8001/forecast/S01
 ```
 
 To see MLflow in the browser, add the `mlflow.coldtrace.test` name to the hosts file and start the proxy
-([infra/proxy/README.md](../infra/proxy/README.md)).
+([middleware/proxy/README.md](../middleware/proxy/README.md)).
 
 The first build takes about 5 minutes (LightGBM, pandas); after that, each step takes seconds.
 

@@ -7,7 +7,7 @@
 # Prepare:   docker compose run --rm --build pipeline prepare.py
 # Train:     docker compose run --rm pipeline train.py
 # All:       docker compose run --rm --build pipeline run.py    (add --generate to rebuild the data)
-# MLflow:    docker compose up -d mlflow      then http://mlflow.coldtrace.test (via infra/proxy)
+# MLflow:    docker compose up -d mlflow      then http://mlflow.coldtrace.test (via middleware/proxy)
 # Serving:   docker compose up -d --build model-api   then http://api.coldtrace.test/ml/docs
 
 name: coldtrace-mlops
