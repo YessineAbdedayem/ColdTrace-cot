@@ -4,6 +4,8 @@
 #            docker compose run --rm ml-user
 # Generate:  docker compose run --rm --build generator --days 30 --reset
 # Tests:     docker compose run --rm --build --entrypoint pytest generator -q
+# Prepare:   docker compose run --rm --build pipeline prepare.py
+# Train:     docker compose run --rm pipeline train.py
 
 name: coldtrace-mlops
 
@@ -35,6 +37,20 @@ services:
       SOURCE_DB: ${SOURCE_DB:-coldtrace}
     volumes:
       - ../gateway-iot/simulator/sensors.json:/data/sensors.json:ro
+    networks: [coldtrace]
+    profiles: [tools]
+
+  # Training pipeline: prepare.py, train.py. Writes its files to ./data (ignored by git).
+  pipeline:
+    build: ./pipeline
+    environment:
+      MONGO_URI: mongodb://${ML_MONGO_USER}:${ML_MONGO_PASSWORD}@mongo:27017/?authSource=admin
+      ML_DB: ${ML_DB:-coldtrace_ml}
+      SOURCE_DB: ${SOURCE_DB:-coldtrace}
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data
+      - ../gateway-iot/simulator/sensors.json:/sensors/sensors.json:ro
     networks: [coldtrace]
     profiles: [tools]
 
