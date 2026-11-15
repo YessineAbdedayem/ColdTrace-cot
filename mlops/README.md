@@ -113,6 +113,7 @@ Outputs in `mlops/data/`:
 | `model/model.txt`, `model/model.json` | Model, feature list, chosen margin |
 | `metrics.json` | The table above, plus the lead-time figures |
 | `report/example_failure.png` | One test failure: temperature, prediction, model warning, rule alert |
+| `report/learning_curve.png` | Error per boosting round on training and validation data, and the round kept by early stopping |
 | `report/feature_importance.png` | Which inputs the model uses |
 | `report/faults.csv` | Each test failure with each method's warning time |
 

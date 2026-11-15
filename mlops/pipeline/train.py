@@ -1,7 +1,7 @@
 """Step 4: train the early-warning model and compare it with the current rule and two baselines.
 
 Reads   $DATA_DIR/train.parquet, test.parquet, faults.parquet   (written by prepare.py)
-Writes  $DATA_DIR/model/model.txt, metrics.json, report/*.png, report/faults.csv
+Writes  $DATA_DIR/model/model.txt, metrics.json, report/*.png (incl. learning_curve.png), report/faults.csv
 
 Methods compared on the test days:
   rule      the current alert engine: a reading above the limit
@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 PARAMS = {
     "objective": "regression",
+    "metric": "l1",              # mean absolute error in °C, readable and used for early stopping
     "learning_rate": 0.05,
     "num_leaves": 31,
     "min_data_in_leaf": 200,
@@ -107,6 +108,23 @@ def plot_example(test, faults_detail, pred, out):
     plt.close(fig)
 
 
+def plot_learning_curve(history, best_iteration, out):
+    """Error per boosting round on the training and validation data."""
+    fig, ax = plt.subplots(figsize=(7, 4))
+    for name, color in (("train", "#1f77b4"), ("validation", "#ff7f0e")):
+        values = history[name]["l1"]
+        ax.plot(range(1, len(values) + 1), values, label=name, color=color)
+    ax.axvline(best_iteration, color="grey", ls="--", lw=1, label=f"kept: round {best_iteration}")
+    ax.set_yscale("log")
+    ax.set_xlabel("boosting round")
+    ax.set_ylabel("mean absolute error (°C, log scale)")
+    ax.set_title("Learning curve")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(out / "learning_curve.png", dpi=120)
+    plt.close(fig)
+
+
 def plot_importance(booster, out):
     gain = pd.Series(booster.feature_importance("gain"), index=booster.feature_name()).sort_values()
     fig, ax = plt.subplots(figsize=(6, 4))
@@ -139,14 +157,18 @@ def main():
     fit, val = train[train["ts"] < cut - timedelta(minutes=15)], train[train["ts"] >= cut].reset_index(drop=True)
     print(f"Fit {len(fit):,} rows, validation {len(val):,}, test {len(test):,}")
 
+    history = {}
+    train_set = lgb.Dataset(fit[FEATURES], fit[TARGET])
     booster = lgb.train(
         PARAMS,
-        lgb.Dataset(fit[FEATURES], fit[TARGET]),
+        train_set,
         num_boost_round=args.rounds,
-        valid_sets=[lgb.Dataset(val[FEATURES], val[TARGET])],
-        callbacks=[lgb.early_stopping(50, verbose=False)],
+        valid_sets=[train_set, lgb.Dataset(val[FEATURES], val[TARGET], reference=train_set)],
+        valid_names=["train", "validation"],
+        callbacks=[lgb.early_stopping(50, verbose=False), lgb.record_evaluation(history)],
     )
-    print(f"Trained {booster.best_iteration} rounds")
+    print(f"Trained {booster.best_iteration} rounds: error {history['train']['l1'][booster.best_iteration - 1]:.3f} °C"
+          f" on training data, {history['validation']['l1'][booster.best_iteration - 1]:.3f} °C on validation")
 
     # margins chosen on validation only: never as many false alarms as today's rule, as early as possible
     rule_false_val = false_alarms_per_sensor_day(val, val["temp_max"] > val["limit_max"])
@@ -194,6 +216,7 @@ def main():
     detail.to_csv(report_dir / "faults.csv", index=False)
     plot_example(test, detail, test_preds["model"], report_dir)
     plot_importance(booster, report_dir)
+    plot_learning_curve(history, booster.best_iteration, report_dir)
     print(f"\nModel, metrics and charts written to {data}")
 
 
