@@ -73,3 +73,13 @@ def test_warnings_during_normal_operation_are_false_alarms():
     rows = pd.DataFrame({"ts": ts, "sensorId": "S01", "label": [None] * 10})
     warn = pd.Series([False, True, True, False, False, True, False, False, False, False])
     assert len(episodes(rows, warn)) == 2
+
+
+def test_promotion_needs_earlier_warnings_without_losing_anything():
+    from tracking import _better
+    prod = {"model_detection_rate": 1.0, "model_false_alarms_per_sensor_day": 0.4, "model_mean_lead_min": 5.0}
+    assert _better(prod, None)[0], "the first model is always promoted"
+    assert _better({**prod, "model_mean_lead_min": 6.0}, prod)[0]
+    assert not _better(prod, prod)[0], "an identical model is not better"
+    assert not _better({**prod, "model_mean_lead_min": 6.0, "model_false_alarms_per_sensor_day": 0.5}, prod)[0]
+    assert not _better({**prod, "model_mean_lead_min": 6.0, "model_detection_rate": 0.9}, prod)[0]

@@ -9,7 +9,7 @@ out of range. A model will predict the temperature a few minutes ahead and raise
 | 2. Export and cleaning (`pipeline/prepare.py`) | Done |
 | 3. Features and target (`pipeline/features.py`) | Done |
 | 4. Training and evaluation (`pipeline/train.py`, `pipeline/evaluate.py`) | Done |
-| 5. Tracking with MLflow (`mlflow.coldtrace.test`) | To do |
+| 5. Tracking and model registry with MLflow (`pipeline/tracking.py`, http://mlflow.coldtrace.test) | Done |
 | 6. Serving (`POST /predict`) | To do |
 | 7. Integration in the API and the monitor | To do |
 | 8. Automated pipeline (one command, GitHub Actions) | To do |
@@ -117,6 +117,37 @@ Outputs in `mlops/data/`:
 | `report/feature_importance.png` | Which inputs the model uses |
 | `report/faults.csv` | Each test failure with each method's warning time |
 
+## MLflow: tracking and model registry (step 5)
+
+MLflow runs as a container (`mlflow`, version 2.18) and keeps everything in the `mlflow-data` Docker volume. Open it at
+**http://mlflow.coldtrace.test**, through `infra/proxy`.
+
+Each `train.py` run is logged to the **`coldtrace-early-warning`** experiment with:
+- **parameters:** LightGBM settings, chosen margin, rounds kept, data size, start of the test period;
+- **metrics:** for each method (rule, persist, trend, model), its detection rate, lead time, false alarms and forecast error, plus the possible lead;
+- **the learning curve:** `train_l1` and `validation_l1` for each round. Open the run, then **Model metrics**;
+- **artifacts:** the charts, `faults.csv`, `metrics.json`, `prepare.json`, and the model itself (LightGBM, with its input signature and an example).
+
+**Registry:** each run registers a new version of the model **`coldtrace-early-warning`**. The **`@production`** alias moves to the new version only if it is better than the current production model on all three:
+1. it detects at least as many failures;
+2. it raises no more false alarms;
+3. it warns earlier on average.
+
+The run's `promoted` and `promotion_reason` tags say what happened. `train.py --force-promote` overrides the check (for example to roll back).
+
+Example from the first runs:
+
+| Version | Run | Mean lead | False alarms/day | Result |
+|---|---|---|---|---|
+| 1 | default settings | 5.0 min | 0.44 | promoted: no production model yet |
+| 2 | `--rounds 150` | 3.3 min | 0.28 | not promoted: warns later |
+
+The model is loaded by name, never by file path. Serving (step 6) will use the same line:
+
+```python
+mlflow.pyfunc.load_model("models:/coldtrace-early-warning@production")
+```
+
 ## Run
 
 Start the team stack first (`gateway-iot`), because this joins its Docker network. Then, from this folder:
@@ -142,13 +173,17 @@ Options:
 Then the training pipeline:
 
 ```powershell
+docker compose up -d mlflow                       # once; it keeps running
 docker compose run --rm --build pipeline prepare.py
 docker compose run --rm pipeline train.py
 ```
 
+To see MLflow in the browser, add the `mlflow.coldtrace.test` name to the hosts file and start the proxy
+([infra/proxy/README.md](../infra/proxy/README.md)).
+
 The first build takes about 5 minutes (LightGBM, pandas); after that, each step takes seconds.
 
-Tests (7 for the generator, 7 for the pipeline, run in the containers):
+Tests (7 for the generator, 8 for the pipeline, run in the containers):
 
 ```powershell
 docker compose run --rm --build --entrypoint pytest generator -q
@@ -161,12 +196,13 @@ To look at the data in Compass, open the `coldtrace_ml` database with the same c
 
 | File | Purpose |
 |---|---|
-| `docker-compose.yml` | `ml-user` (one-shot user creation), `generator` and `pipeline`. More services will be added here: MLflow, model API. |
+| `docker-compose.yml` | `ml-user` (one-shot user creation), `generator`, `pipeline`, and the `mlflow` server. More services will be added here: MLflow, model API. |
 | `generator/generate.py` | The generator: physics per sensor, fault schedule, rule replay, MongoDB writes |
 | `generator/test_generate.py` | Tests: same seed gives same data; normal stays in range; failures cross slowly; silence leaves a gap; a stuck sensor repeats one value; the rule replay matches the alert engine |
 | `pipeline/prepare.py` | Export, per-minute resampling, features, target, time split |
 | `pipeline/features.py` | Feature and target definitions (shared with serving) |
 | `pipeline/train.py` | Training, margin choice, comparison with the rule and the baselines, charts |
+| `pipeline/tracking.py` | MLflow logging, model registration, promotion rule |
 | `pipeline/evaluate.py` | Event-level scoring: detection, lead time over the rule, false alarms |
 | `pipeline/test_pipeline.py` | Tests: the target only looks ahead, features only look back, lead and false alarms are counted right |
 | `scripts/create-ml-user.js` | Creates or updates the least-privilege MongoDB user |

@@ -6,6 +6,7 @@
 # Tests:     docker compose run --rm --build --entrypoint pytest generator -q
 # Prepare:   docker compose run --rm --build pipeline prepare.py
 # Train:     docker compose run --rm pipeline train.py
+# MLflow:    docker compose up -d mlflow      then http://mlflow.coldtrace.test (via infra/proxy)
 
 name: coldtrace-mlops
 
@@ -48,11 +49,31 @@ services:
       ML_DB: ${ML_DB:-coldtrace_ml}
       SOURCE_DB: ${SOURCE_DB:-coldtrace}
       DATA_DIR: /data
+      MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:
       - ./data:/data
       - ../gateway-iot/simulator/sensors.json:/sensors/sensors.json:ro
     networks: [coldtrace]
     profiles: [tools]
+
+  # Experiment tracking and model registry. Runs, metrics and models are kept in the mlflow-data volume.
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.18.0
+    command:
+      - mlflow
+      - server
+      - --host=0.0.0.0
+      - --port=5000
+      - --backend-store-uri=sqlite:////mlflow/mlflow.db
+      - --artifacts-destination=/mlflow/artifacts
+      - --serve-artifacts
+    volumes:
+      - mlflow-data:/mlflow
+    networks: [coldtrace]
+    restart: unless-stopped
+
+volumes:
+  mlflow-data:
 
 networks:
   coldtrace:

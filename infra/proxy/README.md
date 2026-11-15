@@ -6,7 +6,8 @@ One Nginx container on port 80 that gives each ColdTrace service its own name, w
 |---|---|
 | http://coldtrace.test | Front Office (monitor) |
 | http://api.coldtrace.test | REST API (`/api/...`) and alert WebSocket (`/ws/alerts`) |
-| `iam.coldtrace.test`, `mlflow.coldtrace.test` | Reserved for the login server and MLOps. They answer 404 until those services exist. |
+| http://mlflow.coldtrace.test | MLflow: training runs and model registry (start it from `mlops/`) |
+| `iam.coldtrace.test` | Reserved for the login server. It answers 404 until that service exists. |
 
 The old addresses (`localhost:3000`, `localhost:18080`) keep working.
 

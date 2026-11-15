@@ -24,6 +24,7 @@ import matplotlib
 import numpy as np
 import pandas as pd
 
+import tracking
 from evaluate import compare, false_alarms_per_sensor_day
 from features import FEATURES, HORIZON_MIN, TARGET
 
@@ -142,6 +143,8 @@ def main():
                         help="false-alarm budget per sensor per day when choosing the margin "
                              "(default: no more than the current rule on the validation days)")
     parser.add_argument("--rounds", type=int, default=2000, help="maximum boosting rounds (early stopping)")
+    parser.add_argument("--force-promote", action="store_true",
+                        help="label this model production even if it is not better (MLflow only)")
     args = parser.parse_args()
 
     data = Path(os.environ.get("DATA_DIR", "/data"))
@@ -218,6 +221,16 @@ def main():
     plot_importance(booster, report_dir)
     plot_learning_curve(history, booster.best_iteration, report_dir)
     print(f"\nModel, metrics and charts written to {data}")
+
+    if tracking.enabled():
+        tracking.log_run(
+            booster=booster, history=history, params=PARAMS,
+            cli_args={"val_days": args.val_days, "max_false_per_day": budget, "max_rounds": args.rounds},
+            summary=summary, extra=extra, margin=margins["model"], data_dir=data,
+            sample_input=test[FEATURES].sample(500, random_state=0), force_promote=args.force_promote,
+        )
+    else:
+        print("MLFLOW_TRACKING_URI is not set: run not logged to MLflow")
 
 
 if __name__ == "__main__":
