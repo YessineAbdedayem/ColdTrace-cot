@@ -1,0 +1,9 @@
+{
+  "name": "coldtrace-front-office-checks",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "test:browser": "node tests/pwa-browser.cjs"
+  },
+  "devDependencies": { "playwright": "1.65.1" }
+}

@@ -5,36 +5,56 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ColdTrace Monitor</title>
   <meta name="description" content="Development monitor for ColdTrace: live sensors, incidents and simulator faults.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Stencil+Display:wght@700;800&family=Big+Shoulders+Text:wght@400;600;700&family=Martian+Mono:wght@400;500;700&display=swap">
+  <meta name="theme-color" content="#0a1518">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ColdTrace">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
   <link rel="stylesheet" href="monitor.css">
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to monitoring</a>
   <header class="bar">
     <div class="brand">
       <span class="brand-mark" aria-hidden="true">❄</span>
       <h1 class="stencil">ColdTrace</h1>
       <span class="brand-sub">Reefer monitor · dev</span>
     </div>
-    <div class="links" aria-live="polite">
-      <span class="chip" id="chip-api"><i></i>API</span>
-      <span class="chip" id="chip-ws"><i></i>Alert link</span>
+    <div class="links" role="group" aria-label="Connection indicators">
+      <span class="chip" id="chip-api"><i aria-hidden="true"></i>API connecting</span>
+      <span class="chip" id="chip-ws"><i aria-hidden="true"></i>Alerts connecting</span>
       <span id="gateways"></span>
       <time class="clock" id="clock">--:--:--</time>
     </div>
   </header>
 
-  <main class="deck">
-    <section class="sites" id="sites" aria-label="Sites and sensors">
+  <div class="connection-panel">
+    <p id="connection-status" role="status" aria-live="polite" aria-atomic="true">Connecting to backend. Live monitoring is not available yet.</p>
+    <nav class="section-nav" aria-label="Dashboard sections">
+      <a href="#sites">Sensors</a>
+      <a href="#logbook" id="incidents-nav">Incidents</a>
+    </nav>
+    <button type="button" class="pwa-button" id="install-app" hidden>Install app</button>
+  </div>
+  <div class="update-panel" id="pwa-update" hidden>
+    <p id="pwa-message" role="status" aria-live="polite">An app update is ready.</p>
+    <button type="button" class="pwa-button" id="update-app">Update app</button>
+  </div>
+
+  <main class="deck" id="main" tabindex="-1">
+    <section class="sites" id="sites" tabindex="-1" aria-label="Sites and sensors">
       <p class="loading">Reading the cold chain…</p>
     </section>
 
-    <aside class="log" aria-label="Incidents">
+    <aside class="log" id="logbook" tabindex="-1" aria-label="Incidents">
       <div class="log-head">
         <h2 class="stencil">Logbook</h2>
         <span class="open-count" id="open-count">0 open</span>
       </div>
+      <p class="log-state" id="log-state">Waiting for live incidents.</p>
 
       <h3 class="log-title">Open now</h3>
       <p class="demo-note">Demo: the operator name is not authenticated.</p>
@@ -45,7 +65,7 @@
       <ol class="feed" id="feed"></ol>
 
       <div class="controls">
-        <button type="button" class="btn-clear" id="clear-faults">Clear all faults</button>
+        <button type="button" class="btn-clear" id="clear-faults" disabled>Clear all faults</button>
         <p class="hint" id="fault-hint"></p>
       </div>
 
@@ -77,14 +97,15 @@ docker compose start cloud-broker</pre>
         <polyline class="spark-line" points=""></polyline>
       </svg>
       <div class="faults" role="group" aria-label="Simulate a fault">
-        <button type="button" data-fault="door_open">Door</button>
-        <button type="button" data-fault="temp_rise">Heat</button>
-        <button type="button" data-fault="silent">Mute</button>
-        <button type="button" data-fault="none">Reset</button>
+        <button type="button" data-fault="door_open" disabled>Door</button>
+        <button type="button" data-fault="temp_rise" disabled>Heat</button>
+        <button type="button" data-fault="silent" disabled>Mute</button>
+        <button type="button" data-fault="none" disabled>Reset</button>
       </div>
     </article>
   </template>
 
   <script src="monitor.js"></script>
+  <script src="pwa.js"></script>
 </body>
 </html>

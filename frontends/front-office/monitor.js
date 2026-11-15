@@ -16,20 +16,107 @@ let faultsEnabled = null;      // null = unknown yet
 let simFaults = {};            // sensorId -> active fault
 let openIncidents = [];
 let firstRender = true;
+const connection = { api: false, ws: false, lastSuccess: null };
+let knownGateways = [];
+let connectionEpoch = 0;
+let historyNeedsRefresh = true;
+const requests = new Set();
+const pendingSensors = new Set();
+const pendingAcks = new Set();
+let clearPending = false;
+
+const canOperate = () => navigator.onLine && connection.api;
+
+function updateControls() {
+  for (const [id, t] of tiles) {
+    t.buttons.forEach(b => { b.disabled = !canOperate() || faultsEnabled !== true || clearPending || pendingSensors.has(id); });
+  }
+  for (const [id, row] of incidentRows) {
+    const disabled = !canOperate() || pendingAcks.has(id);
+    row.ackButton.disabled = disabled;
+    row.submit.disabled = disabled;
+    row.operator.disabled = disabled;
+    row.comment.disabled = disabled;
+    row.cancel.disabled = pendingAcks.has(id);
+  }
+  $("#clear-faults").disabled = !canOperate() || faultsEnabled !== true || clearPending || pendingSensors.size > 0;
+  document.body.dataset.busy = String(clearPending || pendingSensors.size > 0 || pendingAcks.size > 0);
+}
+
+function updateConnection() {
+  setChip("chip-api", canOperate(), canOperate() ? "API online" : "API unavailable");
+  setChip("chip-ws", connection.ws && navigator.onLine, connection.ws && navigator.onLine ? "Alerts connected" : "Alerts disconnected");
+  const status = $("#connection-status");
+  const offlineGateways = knownGateways.filter(g => g.status !== "online");
+  let message;
+  if (!navigator.onLine) message = "Browser offline. Live monitoring unavailable. Readings are hidden and operational controls are disabled.";
+  else if (!connection.api) message = "Backend unavailable. Live monitoring unavailable. Readings are hidden and operational controls are disabled; retrying.";
+  else if (!connection.ws) message = "Alert link disconnected. Measurements refresh every 5 s; live incident alerts are unavailable. Reconnecting.";
+  else if (offlineGateways.length) message = "Gateway disconnected: " + offlineGateways.map(g => g.gatewayId || g.siteId).join(", ") + ". Check sensor ages; the latest readings may be old.";
+  else message = "Live monitoring connected. Measurements refresh every 5 s; incident alerts arrive in real time.";
+  if (status.textContent !== message) status.textContent = message;
+  status.classList.toggle("disconnected", !canOperate());
+  status.classList.toggle("degraded", canOperate() && (!connection.ws || offlineGateways.length > 0));
+  $("#log-state").textContent = canOperate()
+    ? "Current incident list · last refresh " + hhmmss(connection.lastSuccess)
+    : connection.lastSuccess ? "Last received " + hhmmss(connection.lastSuccess) + " · incidents below are not current."
+      : "Live incidents unavailable. No operational data is saved offline.";
+  if (!canOperate()) {
+    for (const t of tiles.values()) {
+      t.el.classList.add("disconnected");
+      t.temp.textContent = "--";
+      t.hum.textContent = "--";
+      t.door.textContent = "--";
+      t.seen.textContent = t.lastTs ? "Last " + hhmmss(t.lastTs) : "--";
+      t.flag.textContent = "Not live";
+      t.line.setAttribute("points", "");
+      t.band.setAttribute("height", "0");
+    }
+    $("#open-count").textContent = "? open";
+    $("#open-count").classList.remove("hot");
+    $("#open-empty").textContent = "Live incidents unavailable.";
+    $("#incidents-nav").textContent = "Incidents (unavailable)";
+    renderGateways(knownGateways);
+  }
+  updateControls();
+}
+
+function backendUnavailable() {
+  connection.api = false;
+  faultsEnabled = false;
+  historyNeedsRefresh = true;
+  updateConnection();
+}
+
+function requestFailed(error) {
+  if (!error.status || error.status >= 500) backendUnavailable();
+}
 
 // ---------- helpers ----------
 
 async function getJson(url, options) {
-  const r = await fetch(url, options);
-  let data;
-  try { data = await r.json(); } catch (e) { data = null; }
-  if (!r.ok) {
-    const message = data && typeof data.error === "string" ? data.error : url + " returned " + r.status;
-    const err = new Error(message);
-    err.status = r.status;
-    throw err;
+  const mutation = options?.method && options.method !== "GET";
+  if (mutation && !canOperate()) throw new Error("Live connection unavailable. No action was queued; reconnect and check the current state.");
+  const controller = new AbortController();
+  const epoch = connectionEpoch;
+  requests.add(controller);
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const r = await fetch(url, { ...options, cache: "no-store", signal: controller.signal });
+    let data;
+    try { data = await r.json(); } catch (e) { data = null; }
+    if (!r.ok) {
+      const message = data && typeof data.error === "string" ? data.error : url + " returned " + r.status;
+      const err = new Error(message);
+      err.status = r.status;
+      throw err;
+    }
+    if (epoch !== connectionEpoch || !navigator.onLine) throw new Error("Connection changed. Refresh the current state before trying an action again.");
+    return data;
+  } finally {
+    clearTimeout(timer);
+    requests.delete(controller);
   }
-  return data;
 }
 
 function fmt(n, digits = 1) {
@@ -111,11 +198,14 @@ function buildSites(sensors) {
 
 function buildTile(sensor, index) {
   const el = $("#tile-tpl").content.firstElementChild.cloneNode(true);
+  el.setAttribute("aria-label", "Sensor " + sensor.id);
   el.style.setProperty("--i", index);
   $(".tile-id", el).textContent = sensor.id;
   $(".tile-name", el).textContent = siteName(sensor);
-  el.querySelectorAll(".faults button").forEach(b =>
-    b.addEventListener("click", () => setFault(sensor.id, b.dataset.fault, b)));
+  el.querySelectorAll(".faults button").forEach(b => {
+    b.setAttribute("aria-label", b.textContent + " — sensor " + sensor.id);
+    b.addEventListener("click", () => setFault(sensor.id, b.dataset.fault, b));
+  });
   tiles.set(sensor.id, {
     el,
     temp: $(".t-val", el), hum: $(".h-val", el), door: $(".d-val", el), seen: $(".s-val", el),
@@ -129,6 +219,7 @@ function buildTile(sensor, index) {
 function updateTile(sensor) {
   const t = tiles.get(sensor.id);
   if (!t) return;
+  t.el.classList.remove("disconnected");
   const r = sensor.latest || {};
   const open = openIncidents.filter(i => i.sensorId === sensor.id);
   const metricOpen = m => open.some(i => i.metric === m);
@@ -159,7 +250,6 @@ function updateTile(sensor) {
 
   const active = simFaults[sensor.id] || "none";
   t.buttons.forEach(b => {
-    b.disabled = faultsEnabled === false;
     b.classList.toggle("active", b.dataset.fault === active);
     b.setAttribute("aria-pressed", String(b.dataset.fault === active));
   });
@@ -222,6 +312,8 @@ function renderOpen() {
   const count = $("#open-count");
   count.textContent = n + " open";
   count.classList.toggle("hot", n > 0);
+  $("#open-empty").textContent = "All clear. Nothing out of range.";
+  $("#incidents-nav").textContent = `Incidents (${n})`;
   document.title = (n ? `(${n}) ` : "") + "ColdTrace Monitor";
 }
 
@@ -240,6 +332,7 @@ function createIncidentRow(incident) {
   ackButton.type = "button";
   ackButton.className = "btn-ack";
   ackButton.textContent = "Acquitter";
+  ackButton.setAttribute("aria-label", `Acquitter ${metricLabel(incident.metric)} — sensor ${incident.sensorId}`);
 
   const form = document.createElement("form");
   form.className = "ack-form";
@@ -276,6 +369,7 @@ function createIncidentRow(incident) {
   const row = { el, who, what, when, detail, state, acknowledgement, action, ackButton, form, operator, comment, error, submit, cancel };
 
   ackButton.addEventListener("click", () => {
+    if (!canOperate()) return;
     form.hidden = false;
     ackButton.hidden = true;
     operator.focus();
@@ -285,6 +379,7 @@ function createIncidentRow(incident) {
     ackButton.hidden = false;
     error.hidden = true;
     error.textContent = "";
+    ackButton.focus();
   });
   form.addEventListener("submit", event => {
     event.preventDefault();
@@ -322,6 +417,9 @@ function updateIncidentRow(row, incident) {
 }
 
 async function acknowledgeIncident(id, row) {
+  if (!canOperate() || pendingAcks.has(id)) return;
+  pendingAcks.add(id);
+  updateControls();
   row.error.hidden = true;
   row.error.textContent = "";
   row.submit.disabled = true;
@@ -338,19 +436,22 @@ async function acknowledgeIncident(id, row) {
     updateIncidentRow(row, incident);
     poll();
   } catch (e) {
+    requestFailed(e);
     row.error.textContent = e.message;
     row.error.hidden = false;
   } finally {
-    row.submit.disabled = false;
-    row.cancel.disabled = false;
-    row.operator.disabled = false;
-    row.comment.disabled = false;
+    pendingAcks.delete(id);
+    updateControls();
   }
 }
 
 function addFeed(kind, incident, at, flash) {
   const feed = $("#feed");
+  const key = incident.id + ":" + kind;
+  if ([...feed.children].some(item => item.dataset.event === key)) return;
   const li = document.createElement("li");
+  li.dataset.event = key;
+  li.dataset.at = at || "";
   li.className = kind + (flash ? " flash" : "");
   const time = document.createElement("span");
   time.textContent = hhmmss(at);
@@ -365,6 +466,7 @@ function addFeed(kind, incident, at, flash) {
   }
   li.append(time, text);
   feed.prepend(li);
+  [...feed.children].sort((a, b) => b.dataset.at.localeCompare(a.dataset.at)).forEach(item => feed.append(item));
   while (feed.children.length > 30) feed.lastChild.remove();
   if (flash) setTimeout(() => li.classList.remove("flash"), 2500);
 }
@@ -376,18 +478,47 @@ async function loadHistory() {
     const events = [];
     for (const i of recent) {
       events.push({ kind: "opened", i, at: i.openedAt });
+      if (i.acknowledgedAt) events.push({ kind: "acknowledged", i, at: i.acknowledgedAt });
       if (i.closedAt) events.push({ kind: "closed", i, at: i.closedAt });
     }
     events.sort((a, b) => new Date(a.at) - new Date(b.at)).forEach(e => addFeed(e.kind, e.i, e.at, false));
-  } catch (e) { /* the poll will show the API as down */ }
+    historyNeedsRefresh = false;
+  } catch (e) {
+    historyNeedsRefresh = true;
+    if (canOperate()) $("#log-state").textContent = "Event history unavailable; retrying. Displayed events may be incomplete.";
+    else updateConnection();
+  }
 }
 
 // ---------- live alerts ----------
 
-function connectAlerts(delay = 1000) {
+let alertSocket = null;
+let reconnectTimer = null;
+let reconnectDelay = 1000;
+
+function stopAlerts() {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  const previous = alertSocket;
+  alertSocket = null;
+  previous?.close();
+  connection.ws = false;
+}
+
+function connectAlerts() {
+  if (!navigator.onLine || alertSocket || reconnectTimer) return;
   const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/alerts");
-  ws.onopen = () => { setChip("chip-ws", true); delay = 1000; };
+  alertSocket = ws;
+  ws.onopen = () => {
+    if (alertSocket !== ws) return;
+    connection.ws = true;
+    reconnectDelay = 1000;
+    historyNeedsRefresh = true;
+    updateConnection();
+    poll();
+  };
   ws.onmessage = msg => {
+    if (alertSocket !== ws || !navigator.onLine) return;
     try {
       const { event, incident } = JSON.parse(msg.data);
       const kind = event === "incident.opened" ? "opened"
@@ -401,8 +532,13 @@ function connectAlerts(delay = 1000) {
     } catch (e) { /* ignore malformed */ }
   };
   ws.onclose = () => {
-    setChip("chip-ws", false);
-    setTimeout(() => connectAlerts(Math.min(delay * 2, 15000)), delay);
+    if (alertSocket !== ws) return;
+    alertSocket = null;
+    connection.ws = false;
+    updateConnection();
+    if (!navigator.onLine) return;
+    reconnectTimer = setTimeout(() => { reconnectTimer = null; connectAlerts(); }, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 15000);
   };
 }
 
@@ -421,10 +557,13 @@ async function loadFaults() {
       ? "Fault buttons are off: set SIM_CONTROL_URL=http://simulator:4000 on the API."
       : "Simulator unreachable.", true);
   }
-  $("#clear-faults").disabled = faultsEnabled === false;
+  updateControls();
 }
 
 async function setFault(sensorId, fault, button) {
+  if (!canOperate() || faultsEnabled !== true || clearPending || pendingSensors.has(sensorId)) return;
+  pendingSensors.add(sensorId);
+  updateControls();
   button.disabled = true;
   try {
     await getJson("/api/dev/faults", {
@@ -434,20 +573,29 @@ async function setFault(sensorId, fault, button) {
     simFaults[sensorId] = fault;
     hint(`${sensorId}: ${FAULT_LABEL[fault]}. Watch the tile and the logbook.`);
   } catch (e) {
+    requestFailed(e);
     hint("Could not set the fault (" + e.message + ").", true);
   } finally {
-    button.disabled = false;
+    pendingSensors.delete(sensorId);
+    updateControls();
     poll();
   }
 }
 
 $("#clear-faults").addEventListener("click", async () => {
+  if (!canOperate() || faultsEnabled !== true || clearPending || pendingSensors.size > 0) return;
+  clearPending = true;
+  updateControls();
   try {
     await getJson("/api/dev/faults/clear", { method: "POST" });
     simFaults = {};
     hint("All faults cleared. Incidents close after 3 normal readings.");
   } catch (e) {
+    requestFailed(e);
     hint("Could not clear the faults (" + e.message + ").", true);
+  } finally {
+    clearPending = false;
+    updateControls();
   }
   poll();
 });
@@ -465,10 +613,12 @@ function renderGateways(list) {
   root.textContent = "";
   for (const g of list) {
     const chip = document.createElement("span");
-    const online = g.status === "online";
+    const online = canOperate() && g.status === "online";
     chip.className = "chip " + (online ? "ok" : "bad");
     chip.title = `forwarded ${g.forwarded ?? "?"} · buffered ${g.buffered ?? "?"} · replayed ${g.replayed ?? "?"}`;
-    chip.append(document.createElement("i"), document.createTextNode(`${g.gatewayId || g.siteId} ${g.status}`));
+    const icon = document.createElement("i");
+    icon.setAttribute("aria-hidden", "true");
+    chip.append(icon, document.createTextNode(`${g.gatewayId || g.siteId} ${canOperate() ? g.status : "status unknown"}`));
     root.append(chip);
   }
 }
@@ -476,16 +626,20 @@ function renderGateways(list) {
 // ---------- main loop ----------
 
 let polling = false;
+let refreshRequested = false;
 async function poll() {
-  if (polling) return;
+  if (!navigator.onLine) return;
+  if (polling) { refreshRequested = true; return; }
   polling = true;
+  const epoch = connectionEpoch;
   try {
     const [sensors, open, gateways] = await Promise.all([
       getJson("/api/sensors"),
       getJson("/api/incidents?status=open"),
       getJson("/api/gateways")
     ]);
-    setChip("chip-api", true);
+    if (epoch !== connectionEpoch || !navigator.onLine) return;
+    knownGateways = gateways;
     openIncidents = open;
     if (firstRender || sensors.some(s => !tiles.has(s.id))) {
       tiles.clear();
@@ -500,18 +654,44 @@ async function poll() {
       }
     }
     await loadFaults();
+    if (epoch !== connectionEpoch || !navigator.onLine) return;
+    connection.api = true;
+    connection.lastSuccess = new Date().toISOString();
     sensors.forEach(updateTile);
     renderOpen();
     renderGateways(gateways);
+    updateConnection();
+    if (historyNeedsRefresh) await loadHistory();
   } catch (e) {
-    setChip("chip-api", false);
+    backendUnavailable();
   } finally {
     polling = false;
+    if (refreshRequested) {
+      refreshRequested = false;
+      if (navigator.onLine) queueMicrotask(poll);
+    }
   }
 }
 
 setInterval(() => { $("#clock").textContent = new Date().toLocaleTimeString([], { hour12: false }); }, 1000);
-loadHistory();
+window.addEventListener("offline", () => {
+  connectionEpoch++;
+  requests.forEach(request => request.abort());
+  stopAlerts();
+  backendUnavailable();
+});
+window.addEventListener("online", () => {
+  historyNeedsRefresh = true;
+  connectAlerts();
+  poll();
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) return;
+  if (!connection.lastSuccess || Date.now() - Date.parse(connection.lastSuccess) > POLL_MS * 3) backendUnavailable();
+  connectAlerts();
+  poll();
+});
+updateConnection();
 connectAlerts();
 poll();
 setInterval(poll, POLL_MS);

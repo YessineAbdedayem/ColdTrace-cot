@@ -12,8 +12,8 @@
 
   --frost: #a6ecff;
   --ice: #e8f8fc;
-  --mist: #7a9aa2;
-  --dim: #4d6469;
+  --mist: #9ab4bb;
+  --dim: #93aeb5;
 
   --hazard: #ff5b1a;
   --hazard-glow: rgba(255, 91, 26, 0.35);
@@ -77,7 +77,7 @@ body {
 .brand { display: flex; align-items: baseline; gap: 12px; }
 .brand h1 { font-size: clamp(30px, 4vw, 44px); line-height: 0.9; color: var(--frost);
   text-shadow: 0 0 22px rgba(166, 236, 255, 0.35); }
-.brand-mark { font-size: 26px; color: var(--frost); animation: spin 18s linear infinite; display: inline-block; }
+.brand-mark { font-size: 26px; color: var(--frost); display: inline-block; }
 .brand-sub { font-family: var(--f-mono); font-size: 11px; color: var(--mist); text-transform: uppercase;
   letter-spacing: 0.18em; }
 
@@ -157,7 +157,7 @@ body {
   border: 1px solid var(--edge);
   border-radius: var(--radius);
   background: linear-gradient(160deg, rgba(19, 37, 41, 0.9), rgba(8, 17, 20, 0.92));
-  overflow: hidden;
+  overflow: clip;
   animation: rise 0.6s cubic-bezier(.2, .9, .2, 1) both;
   animation-delay: calc(var(--i, 0) * 55ms + 260ms);
   transition: border-color 0.4s, box-shadow 0.4s;
@@ -189,7 +189,7 @@ body {
 .spark-line { fill: none; stroke: var(--frost); stroke-width: 1.6; vector-effect: non-scaling-stroke;
   stroke-linejoin: round; stroke-linecap: round; }
 
-.faults { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.faults { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
 .faults button {
   font: 600 12px var(--f-ui); text-transform: uppercase; letter-spacing: 0.1em;
   padding: 6px 0;
@@ -357,4 +357,62 @@ code { color: var(--ice); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* Connection and install/update controls keep their meaning without color. */
+[hidden] { display: none !important; }
+html { scroll-padding-top: 110px; }
+:focus-visible { outline: 2px solid var(--frost); outline-offset: 3px; }
+.skip-link { position: fixed; top: 8px; left: 8px; z-index: 20; padding: 12px; color: var(--steel-950);
+  background: var(--frost); transform: translateY(-180%); }
+.skip-link:focus { transform: none; }
+.connection-panel, .update-panel { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px;
+  padding: 10px clamp(16px, 3vw, 36px); border-bottom: 1px solid var(--hairline); background: var(--steel-950); }
+#connection-status { flex: 1 1 360px; margin: 0; color: var(--frost); font: 400 12px/1.6 var(--f-mono); }
+#connection-status.disconnected { color: var(--amber); }
+#connection-status.degraded { color: var(--amber); }
+.section-nav { display: flex; flex-wrap: wrap; gap: 8px; }
+.section-nav a { display: inline-flex; align-items: center; min-height: 44px; padding: 8px;
+  color: var(--ice); font: 500 12px var(--f-mono); text-underline-offset: 4px; }
+.pwa-button { min-height: 44px; padding: 9px 14px; border: 1px solid var(--frost); border-radius: var(--radius);
+  background: var(--steel-800); color: var(--ice); font: 700 14px var(--f-ui); cursor: pointer; }
+.update-panel p { flex: 1 1 300px; margin: 0; font: 400 12px/1.6 var(--f-mono); color: var(--amber); }
+.log-state { color: var(--mist); font: 400 11px/1.6 var(--f-mono); margin: 12px 0; }
+.tile.disconnected .t-val, .tile.disconnected .tile-stats dd { color: var(--mist); text-shadow: none; }
+.tile.disconnected .tile-flag { color: var(--amber); }
+.tile.disconnected { border-style: dashed; box-shadow: none; }
+.tile-stats dd, .site-limit, .incident, .feed li { overflow-wrap: anywhere; }
+.feed li { grid-template-columns: 9ch minmax(0, 1fr); }
+.feed li > span:first-child { white-space: nowrap; }
+.tile-head, .tile-name, .tile-flag, .brand, .links { min-width: 0; }
+.tile-flag { max-width: 100px; overflow-wrap: anywhere; }
+.faults button, .btn-ack, .ack-controls button { min-height: 44px; }
+.faults button { min-width: 0; }
+.ack-form input, .ack-form textarea { min-height: 44px; font-size: 16px; }
+.ack-controls { flex-wrap: wrap; }
+.btn-ack:disabled, .ack-controls button:disabled, .faults button:disabled, .btn-clear:disabled { opacity: .55; }
+
+@media (max-width: 1100px) {
+  .bar { position: relative; }
+  .deck { grid-template-columns: minmax(0, 1fr); }
+  .log { position: static; max-height: none; }
+  html { scroll-padding-top: 16px; }
+}
+@media (max-width: 768px) {
+  .links { width: 100%; }
+  .clock { margin-left: auto; }
+  .brand { flex-wrap: wrap; gap: 8px 12px; }
+}
+@media (max-width: 520px) {
+  .brand-sub { flex-basis: 100%; letter-spacing: .12em; }
+  .deck { padding: 16px 16px 32px; }
+  .site-limit { flex-basis: 100%; border-left: 0; padding-left: 0; }
+  .log { padding: 14px; }
+  .incident { grid-template-columns: auto minmax(0, 1fr); }
+  .incident .when { grid-column: 1 / -1; text-align: left; }
+  .incident .detail, .acknowledgement, .feed li { font-size: 12px; }
+  .incident-state { line-height: 1.6; }
+  .t-val { font-size: 44px; }
+  .log-head { flex-wrap: wrap; }
+  .connection-panel, .update-panel { align-items: flex-start; }
 }

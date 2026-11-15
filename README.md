@@ -14,9 +14,9 @@ mesurent la température, l'humidité et l'ouverture des portes. Une passerelle 
 transmet les mesures au cloud, qui les stocke, les analyse et déclenche des alertes
 en temps réel.
 
-Deux applications PWA sont prévues :
-- **front-office** : tableau de bord temps réel, historique, acquittement des alertes ;
-- **back-office** : gestion des capteurs, des sites, des seuils et des utilisateurs.
+Deux applications clientes sont prévues :
+- **front-office** : PWA installable avec le tableau de bord existant, historique récent, acquittement et coque hors ligne ;
+- **back-office** : future PWA de gestion des capteurs, des sites, des seuils et des utilisateurs.
 
 ## Technologies
 
@@ -35,7 +35,7 @@ Deux applications PWA sont prévues :
 ├── README.md
 ├── docs/                          # Cahier des charges LaTeX, PDF et format des messages
 ├── frontends/
-│   ├── front-office/              # Moniteur existant : HTML/CSS/JS et serveur Nginx indépendant
+│   ├── front-office/              # PWA : moniteur, manifeste, service worker, icônes, tests et Nginx
 │   └── back-office/               # Réservé à la future PWA
 ├── middleware/
 │   ├── api/                       # Projet Maven existant : ingestion, alertes, REST et WebSocket
@@ -47,6 +47,11 @@ Deux applications PWA sont prévues :
 Le backend reste un seul projet Maven dans `middleware/api/`, avec son moteur d'alertes.
 Le moniteur est servi séparément depuis [frontends/front-office/](frontends/front-office/README.md), sur le port 3000
 par défaut. Le Back Office, `core/` et `iam/` restent réservés et contiennent uniquement un `.gitkeep`.
+
+Le Front Office peut être installé depuis un navigateur compatible. Hors ligne, seule l'interface statique reste
+disponible : les valeurs des mesures sont masquées et les actions désactivées. Aucune donnée opérationnelle n'est
+mise en cache. Les [instructions PWA](frontends/front-office/README.md#install-as-an-application) expliquent
+l'installation, les mises à jour et les limites selon le navigateur.
 
 Le [format des messages](docs/MESSAGE-FORMAT.md), le [cahier des charges](docs/cahier_des_charges_coldtrace_v3.tex),
 le [document Cloud of Things](docs/Cloud_of_Things.pdf) et l'[explication de la passerelle](docs/Gateway-explained.pdf)
