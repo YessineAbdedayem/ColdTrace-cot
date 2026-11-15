@@ -56,7 +56,7 @@ the dashboard is included in the WAR, and no fixed-port redirect is added to the
 
 - All three sites and ten sensor cards appear; temperature, humidity, age and curves refresh every 5 seconds.
 - API, Alert link and gateway indicators become green. The logbook loads recent stored events.
-- Door opens the selected simulated door and creates a door incident. Heat warms the sensor until its temperature exceeds the profile limit.
+- Door opens the selected simulated door and creates a door incident. Thaw simulates a cooling failure: the temperature rises until it exceeds the profile limit.
 - Mute stops readings; a silence incident appears after more than 60 seconds, checked every 15 seconds.
 - Acquitter records an operator and comment on an open incident without closing it.
 - Reset restores the selected sensor; normal readings close incidents according to existing recovery rules.

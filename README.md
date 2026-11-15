@@ -113,7 +113,7 @@ n'héberge plus le tableau de bord. Nginx sert les fichiers et transmet `/api/` 
 
 - **Capteurs :** chaque capteur est affiché avec sa température, son humidité, sa porte, l'âge de sa dernière mesure
   et une courbe des 2 dernières minutes. L'affichage se rafraîchit toutes les 5 s.
-- **Pannes :** les boutons **Door / Heat / Mute / Reset** de chaque capteur déclenchent les pannes des tests 5 à 8, et
+- **Pannes :** les boutons **Door / Thaw / Mute / Reset** de chaque capteur (Thaw = panne de froid, la température monte) déclenchent les pannes des tests 5 à 8, et
   « Clear all faults » les annule toutes.
 - **Incidents :** le journal montre les incidents ouverts et, en direct par WebSocket, chaque ouverture et fermeture
   (test 9).

@@ -64,7 +64,7 @@ PWA functionality is not implemented yet. The API keeps its existing `API_PORT`.
   and a sparkline of the last 2 minutes, with the allowed band. It refreshes every 5 s.
 - **States:** a tile turns orange with hazard stripes when out of range, amber when the door is open, and grey with
   "no signal" when the sensor is silent.
-- **Fault buttons:** Door / Heat / Mute / Reset on each tile, and "Clear all faults", drive the simulator.
+- **Fault buttons:** Door / Thaw (cooling failure) / Mute / Reset on each tile, and "Clear all faults", drive the simulator.
 - **Logbook:** the open incidents, and a live feed of incidents opening and closing, received over the WebSocket.
 - **Header:** the API and WebSocket status, and each gateway's status. Hover a gateway chip for its counters.
 

@@ -7,7 +7,7 @@ const SILENT_AFTER_S = 60;
 const METRIC_LABEL = { temperature: "Temperature", humidity: "Humidity", door: "Door open", silence: "No signal" };
 // incidents written before the "metric" field existed have no metric: show them generically
 const metricLabel = m => METRIC_LABEL[m] || m || "Incident";
-const FAULT_LABEL = { door_open: "door open", temp_rise: "heating", silent: "muted", none: "normal" };
+const FAULT_LABEL = { door_open: "door open", temp_rise: "thawing (cooling failure)", silent: "muted", none: "normal" };
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const tiles = new Map();       // sensorId -> { el, ... }
