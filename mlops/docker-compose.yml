@@ -1,0 +1,44 @@
+# ColdTrace MLOps (dev). Joins the team stack's network, so start gateway-iot first.
+#
+# Once:      cp .env.example .env   (then change the password)
+#            docker compose run --rm ml-user
+# Generate:  docker compose run --rm --build generator --days 30 --reset
+# Tests:     docker compose run --rm --build --entrypoint pytest generator -q
+
+name: coldtrace-mlops
+
+services:
+  # One-shot: creates the pipeline's MongoDB user with the root account of the dev stack.
+  ml-user:
+    image: mongo:7
+    env_file: ../gateway-iot/.env      # MONGO_ROOT_USER / MONGO_ROOT_PASSWORD
+    environment:
+      ML_MONGO_USER: ${ML_MONGO_USER}
+      ML_MONGO_PASSWORD: ${ML_MONGO_PASSWORD}
+      ML_DB: ${ML_DB:-coldtrace_ml}
+      SOURCE_DB: ${SOURCE_DB:-coldtrace}
+    entrypoint:
+      - sh
+      - -c
+      - mongosh --quiet --host mongo -u "$$MONGO_ROOT_USER" -p "$$MONGO_ROOT_PASSWORD" --authenticationDatabase admin --file /scripts/create-ml-user.js
+    volumes:
+      - ./scripts/create-ml-user.js:/scripts/create-ml-user.js:ro
+    networks: [coldtrace]
+    profiles: [setup]
+
+  # One-shot: writes synthetic history into the ML database.
+  generator:
+    build: ./generator
+    environment:
+      MONGO_URI: mongodb://${ML_MONGO_USER}:${ML_MONGO_PASSWORD}@mongo:27017/?authSource=admin
+      ML_DB: ${ML_DB:-coldtrace_ml}
+      SOURCE_DB: ${SOURCE_DB:-coldtrace}
+    volumes:
+      - ../gateway-iot/simulator/sensors.json:/data/sensors.json:ro
+    networks: [coldtrace]
+    profiles: [tools]
+
+networks:
+  coldtrace:
+    external: true
+    name: coldtrace-gateway_default

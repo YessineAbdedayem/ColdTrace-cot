@@ -41,7 +41,10 @@ Deux applications clientes sont prévues :
 │   ├── api/                       # Projet Maven existant : ingestion, alertes, REST et WebSocket
 │   ├── core/                      # Réservé ; aucun module Maven pour le moment
 │   └── iam/                       # Réservé ; aucune authentification implémentée ici
-└── gateway-iot/                    # Node-RED, brokers MQTT, simulateur et stack Docker Compose
+├── gateway-iot/                    # Node-RED, brokers MQTT, simulateur et stack Docker Compose
+├── mlops/                         # Pipeline MLOps : données synthétiques (fait), entraînement, MLflow, service de prédiction (à venir)
+└── infra/
+    └── proxy/                      # Proxy inverse Nginx : coldtrace.test, api.coldtrace.test (voir son README)
 ```
 
 Le backend reste un seul projet Maven dans `middleware/api/`, avec son moteur d'alertes.
