@@ -7,6 +7,7 @@
 # Prepare:   docker compose run --rm --build pipeline prepare.py
 # Train:     docker compose run --rm pipeline train.py
 # MLflow:    docker compose up -d mlflow      then http://mlflow.coldtrace.test (via infra/proxy)
+# Serving:   docker compose up -d --build model-api   then http://api.coldtrace.test/ml/docs
 
 name: coldtrace-mlops
 
@@ -69,6 +70,21 @@ services:
       - --serve-artifacts
     volumes:
       - mlflow-data:/mlflow
+    networks: [coldtrace]
+    restart: unless-stopped
+
+  # The production model behind an HTTP API. Reloads by itself when @production moves in MLflow.
+  model-api:
+    build:
+      context: .
+      dockerfile: serving/Dockerfile
+    depends_on: [mlflow]
+    environment:
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      MONGO_URI: mongodb://${ML_MONGO_USER}:${ML_MONGO_PASSWORD}@mongo:27017/?authSource=admin
+      SOURCE_DB: ${SOURCE_DB:-coldtrace}
+    ports:
+      - "127.0.0.1:8001:8000"
     networks: [coldtrace]
     restart: unless-stopped
 

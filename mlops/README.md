@@ -10,7 +10,7 @@ out of range. A model will predict the temperature a few minutes ahead and raise
 | 3. Features and target (`pipeline/features.py`) | Done |
 | 4. Training and evaluation (`pipeline/train.py`, `pipeline/evaluate.py`) | Done |
 | 5. Tracking and model registry with MLflow (`pipeline/tracking.py`, http://mlflow.coldtrace.test) | Done |
-| 6. Serving (`POST /predict`) | To do |
+| 6. Serving (`serving/`, http://api.coldtrace.test/ml/docs) | Done |
 | 7. Integration in the API and the monitor | To do |
 | 8. Automated pipeline (one command, GitHub Actions) | To do |
 | 9. Monitoring and retraining | To do |
@@ -148,6 +148,40 @@ The model is loaded by name, never by file path. Serving (step 6) will use the s
 mlflow.pyfunc.load_model("models:/coldtrace-early-warning@production")
 ```
 
+## Serving: the model behind an API (step 6)
+
+The `model-api` container (FastAPI) loads **`models:/coldtrace-early-warning@production`** from MLflow. Every minute it
+checks whether `@production` moved, and loads the new version if so. Promoting a model in MLflow therefore deploys it
+without a restart or a code change. If MLflow is down, it keeps serving the model it already has.
+
+It computes the inputs with the same `features.py` as training: the Docker image copies it from `pipeline/`. Training
+and serving can't drift apart.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | Is a model loaded, which version, which margin |
+| `GET /forecast/{sensorId}` | Reads the sensor's last 20 minutes from the platform database (`coldtrace`, read-only) and returns the forecast. Step 7 will use this. |
+| `POST /predict` | The same forecast from readings sent in the request (at least 16 minutes; `profile`, optional `limitMax`) |
+
+Addresses:
+- **Through the proxy:** `http://api.coldtrace.test/ml/...`, and the interactive docs at **http://api.coldtrace.test/ml/docs**;
+- **Directly:** `http://localhost:8001/...`, API calls only;
+- **From the other containers:** `http://model-api:8000/...`.
+
+Example answer:
+
+```json
+{"sensorId": "S03", "horizonMin": 10, "modelVersion": "1", "minute": "2026-11-15T20:47:00+00:00",
+ "temperature": 3.15, "predictedMax": 6.21, "limitMax": 4.0, "margin": 0.25,
+ "warning": true, "doorOpen": false, "profile": "cold"}
+```
+
+`warning` is true when `predictedMax` is above `limitMax + margin` and the door is closed: the same rule as in
+evaluation. Unfinished minutes (fewer than 6 readings) are left out. Too little history gives a 422.
+
+Live check with the simulator: Thaw on S03 at 20:46. The next minute, at **3.15 °C, still under the 4 °C limit**, the
+service already answered `warning: true` with a predicted maximum of 6.2 °C.
+
 ## Run
 
 Start the team stack first (`gateway-iot`), because this joins its Docker network. Then, from this folder:
@@ -178,16 +212,25 @@ docker compose run --rm --build pipeline prepare.py
 docker compose run --rm pipeline train.py
 ```
 
+Start the model API (it keeps running):
+
+```powershell
+docker compose up -d --build model-api
+curl http://localhost:8001/health
+curl http://localhost:8001/forecast/S01
+```
+
 To see MLflow in the browser, add the `mlflow.coldtrace.test` name to the hosts file and start the proxy
 ([infra/proxy/README.md](../infra/proxy/README.md)).
 
 The first build takes about 5 minutes (LightGBM, pandas); after that, each step takes seconds.
 
-Tests (7 for the generator, 8 for the pipeline, run in the containers):
+Tests (7 for the generator, 8 for the pipeline, 8 for serving, run in the containers):
 
 ```powershell
 docker compose run --rm --build --entrypoint pytest generator -q
 docker compose run --rm --build --entrypoint pytest pipeline -q
+docker compose run --rm --build --no-deps --entrypoint pytest model-api -q
 ```
 
 To look at the data in Compass, open the `coldtrace_ml` database with the same connection as `coldtrace`.
@@ -196,7 +239,7 @@ To look at the data in Compass, open the `coldtrace_ml` database with the same c
 
 | File | Purpose |
 |---|---|
-| `docker-compose.yml` | `ml-user` (one-shot user creation), `generator`, `pipeline`, and the `mlflow` server. More services will be added here: MLflow, model API. |
+| `docker-compose.yml` | `ml-user` (one-shot user creation), `generator`, `pipeline`, the `mlflow` server, and `model-api`. More services will be added here: MLflow, model API. |
 | `generator/generate.py` | The generator: physics per sensor, fault schedule, rule replay, MongoDB writes |
 | `generator/test_generate.py` | Tests: same seed gives same data; normal stays in range; failures cross slowly; silence leaves a gap; a stuck sensor repeats one value; the rule replay matches the alert engine |
 | `pipeline/prepare.py` | Export, per-minute resampling, features, target, time split |
@@ -205,5 +248,8 @@ To look at the data in Compass, open the `coldtrace_ml` database with the same c
 | `pipeline/tracking.py` | MLflow logging, model registration, promotion rule |
 | `pipeline/evaluate.py` | Event-level scoring: detection, lead time over the rule, false alarms |
 | `pipeline/test_pipeline.py` | Tests: the target only looks ahead, features only look back, lead and false alarms are counted right |
+| `serving/app.py` | The model API: loads and hot-reloads `@production`, `/health`, `/predict`, `/forecast/{sensorId}` |
+| `serving/forecast.py` | Raw readings to per-minute rows, features of the latest minute, warning rule |
+| `serving/test_serving.py` | Tests: same resampling and features as training, history checks, door rule, endpoints |
 | `scripts/create-ml-user.js` | Creates or updates the least-privilege MongoDB user |
 | `.env.example` | Variables to copy to `.env` (ignored by git) |
