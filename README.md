@@ -35,17 +35,18 @@ Deux applications PWA sont prévues :
 ├── README.md
 ├── docs/                          # Cahier des charges LaTeX, PDF et format des messages
 ├── frontends/
-│   ├── front-office/              # Réservé à la future PWA
+│   ├── front-office/              # Moniteur existant : HTML/CSS/JS et serveur Nginx indépendant
 │   └── back-office/               # Réservé à la future PWA
 ├── middleware/
-│   ├── api/                       # Projet Maven existant : ingestion, alertes, REST, WebSocket et /monitor/
+│   ├── api/                       # Projet Maven existant : ingestion, alertes, REST et WebSocket
 │   ├── core/                      # Réservé ; aucun module Maven pour le moment
 │   └── iam/                       # Réservé ; aucune authentification implémentée ici
 └── gateway-iot/                    # Node-RED, brokers MQTT, simulateur et stack Docker Compose
 ```
 
-Le backend reste un seul projet Maven dans `middleware/api/`. Son moteur d'alertes et sa page de démonstration
-`/monitor/` restent intégrés à ce projet. Les dossiers réservés contiennent uniquement un `.gitkeep`.
+Le backend reste un seul projet Maven dans `middleware/api/`, avec son moteur d'alertes.
+Le moniteur est servi séparément depuis [frontends/front-office/](frontends/front-office/README.md), sur le port 3000
+par défaut. Le Back Office, `core/` et `iam/` restent réservés et contiennent uniquement un `.gitkeep`.
 
 Le [format des messages](docs/MESSAGE-FORMAT.md), le [cahier des charges](docs/cahier_des_charges_coldtrace_v3.tex),
 le [document Cloud of Things](docs/Cloud_of_Things.pdf) et l'[explication de la passerelle](docs/Gateway-explained.pdf)
@@ -89,8 +90,8 @@ Si le port 8080 est déjà pris sur la machine (par exemple par Oracle), mettre 
 ce port dans les tests ci-dessous.
 
 ```bash
-docker compose up -d --build  # 6 services + dev-seed (enregistre les capteurs puis s'arrête)
-docker compose ps             # site-broker, cloud-broker, node-red, simulator, mongo, api : tous "Up"
+docker compose up -d --build  # 7 services + dev-seed (enregistre les capteurs puis s'arrête)
+docker compose ps             # site-broker, cloud-broker, node-red, simulator, mongo, api, front-office : tous "Up"
 ./scripts/smoke-test.sh       # tests automatiques de bout en bout : chaque ligne doit afficher PASS
 ```
 
@@ -101,8 +102,9 @@ exemple pour une démonstration.
 
 ### Le plus simple : la page de supervision
 
-Ouvrir **http://localhost:8080/monitor/** (ou le port de `API_PORT`). Elle remplace la plupart des commandes de cette
-section :
+Ouvrir **http://localhost:3000/** (ou le port de `FRONT_OFFICE_PORT`). Le Front Office remplace la plupart des commandes
+de cette section. L'API conserve son port (`API_PORT`, 18080 sur le PC de développement) ; son ancien chemin `/monitor/`
+n'héberge plus le tableau de bord. Nginx sert les fichiers et transmet `/api/` et `/ws/alerts` à l'API :
 
 - **Capteurs :** chaque capteur est affiché avec sa température, son humidité, sa porte, l'âge de sa dernière mesure
   et une courbe des 2 dernières minutes. L'affichage se rafraîchit toutes les 5 s.

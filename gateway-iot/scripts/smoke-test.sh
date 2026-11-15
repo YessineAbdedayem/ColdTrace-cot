@@ -67,7 +67,7 @@ publish_as_gateway() {
 services_running() {
   local services service
   services="$(docker compose ps --services --filter status=running | tr -d '\r')" || return 1
-  for service in site-broker cloud-broker node-red simulator mongo api; do
+  for service in site-broker cloud-broker node-red simulator mongo api front-office; do
     if ! grep -Fxq "$service" <<< "$services"; then
       printf '  Service is not running: %s\n' "$service"
       return 1
@@ -259,7 +259,15 @@ check_outage() {
   wait_until 60 live_after "$until" || { printf '  Live readings did not resume\n'; return 1; }
 }
 
-check_result "all six Compose services are running" services_running
+check_front_office() {
+  local address
+  address="$(docker compose port front-office 80 | tr -d '\r')" || return 1
+  curl -fsS -m 5 "http://$address/" | grep -Fq 'ColdTrace Monitor' || return 1
+  [[ "$(curl -fsS -m 5 "http://$address/api/health")" == '{"status":"ok"}' ]]
+}
+
+check_result "all seven Compose services are running" services_running
+check_result "Front Office loads and proxies the API health check" check_front_office
 check_result "telemetry arrives from all ten sensors on all three sites" check_telemetry
 check_result "MongoDB ping and unique msgId index" check_mongo
 check_result "API answers on /api/health" check_api

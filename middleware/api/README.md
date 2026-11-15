@@ -8,8 +8,8 @@ Back-end skeleton for ColdTrace:
 - the latest status of each site's gateway is kept in `coldtrace.gateways`, with the site id as `_id`
 - each new reading is checked against its sensor's limits, and incidents are opened and closed in `coldtrace.incidents`
 - live alerts are pushed to WebSocket clients on `/ws/alerts`
-- read-only REST endpoints (sensors, incidents, gateways) and a **monitor page** at `/monitor/` to test everything from
-  the browser
+- REST endpoints (sensors, incidents, gateways and acknowledgement), consumed by the independent
+  [Front Office](../../frontends/front-office/README.md)
 
 Stack: Java 21, Jakarta EE 11 (`jakarta.jakartaee-api` 11.0.0), WildFly 42 (`quay.io/wildfly/wildfly:42.0.0.Final-jdk21`),
 MongoDB Java driver 5.14 (sync), Eclipse Paho MQTT v3 1.2.5.
@@ -24,8 +24,7 @@ src/main/java/tn/supcom/coldtrace/
 ├── alert/                   # AlertEngine (incidents), AlertRules (pure decisions), AlertSocket + AlertBroadcaster (WebSocket)
 └── rest/                    # read-only endpoints + dev-only fault proxy for the monitor page
 src/main/webapp/
-├── index.html               # redirects / to the monitor
-└── monitor/                 # monitor page: index.html, monitor.css, monitor.js (no framework, no build step)
+└── index.html               # API landing page; the monitor is served by the independent Front Office
 ```
 
 ## REST endpoints
@@ -57,8 +56,9 @@ to `http://simulator:4000`; never set it in production.
 
 ## Monitor page
 
-Open **http://localhost:8080/monitor/** (or just http://localhost:8080/). This is a test tool for developers; the
-real dashboards are the PWAs.
+Open the independent **Front Office at http://localhost:3000/** (`FRONT_OFFICE_PORT`, default 3000).
+Its sources are in `frontends/front-office/`, outside the WAR. It retains the existing development monitor;
+PWA functionality is not implemented yet. The API keeps its existing `API_PORT`.
 
 - **Sites and sensors:** each sensor tile shows its temperature, humidity, door, the time since its last reading
   and a sparkline of the last 2 minutes, with the allowed band. It refreshes every 5 s.
@@ -71,8 +71,9 @@ real dashboards are the PWAs.
 Things the page cannot do (a cloud outage, for example) are listed under "Terminal-only tests" at the bottom of the
 logbook.
 
-The path is `/monitor/` and not `/console/` on purpose: WildFly reserves `/console` for its admin console and redirects
-it to `/noredirect.html`.
+Nginx serves the frontend and proxies `/api/` and `/ws/alerts` to `api:8080` on the Compose network.
+The browser uses its own frontend origin, so no backend CORS relaxation is required. The old API `/monitor/`
+route is removed; the backend root is now an API landing page.
 
 ## Message format
 

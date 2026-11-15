@@ -21,7 +21,7 @@ see [MESSAGE-FORMAT.md](../docs/MESSAGE-FORMAT.md).
 
 | Path | What |
 |---|---|
-| `docker-compose.yml` | site broker, cloud broker, Node-RED, simulator, MongoDB, the API, and a one-shot job that registers the simulated sensors |
+| `docker-compose.yml` | site broker, cloud broker, Node-RED, simulator, MongoDB, API, independent Front Office, and a one-shot job that registers the simulated sensors |
 | `.env.example` | settings and passwords (copy to `.env`) |
 | `scripts/gen-certs.sh` | creates the dev CA and the cloud broker's TLS certificate |
 | `scripts/run-all.sh` | prepares `.env` and certificates, starts everything, runs the smoke test |
@@ -62,7 +62,9 @@ docker compose up -d --build
 
 If the certificates are missing, `docker compose up` stops with an error
 instead of starting a broken stack. The API is on http://localhost:8080
-(change it with `API_PORT` in `.env`).
+(change it with `API_PORT` in `.env`). The **Front Office is at http://localhost:3000/**
+(`FRONT_OFFICE_PORT`, default 3000), served by Nginx from `frontends/front-office/`.
+It forwards REST and WebSocket requests to the API; see the [Front Office README](../frontends/front-office/README.md).
 
 MongoDB's init script creates the `coldtrace` database and its app user,
 collections and indexes when the data volume is empty. Init scripts run only

@@ -6,6 +6,7 @@
 #   mongo        : local database for the backend
 #   dev-seed     : registers the simulated sensors in MongoDB, then exits
 #   api          : Jakarta EE backend, built from ../middleware/api
+#   front-office : independent monitor, REST and WebSocket proxy to api
 #
 # Before the first start:  cp .env.example .env   and   ./scripts/gen-certs.sh
 # Start:                    docker compose up -d
@@ -129,10 +130,18 @@ services:
       MQTT_USER: ${CLOUD_BACKEND_USER}
       MQTT_PASSWORD: ${CLOUD_BACKEND_PASSWORD}
       MQTT_CA_PATH: /certs/ca.crt
-      # Dev only: lets the monitor page (/monitor/) trigger simulator faults through the API
+      # Dev only: lets the Front Office trigger simulator faults through the API
       SIM_CONTROL_URL: http://simulator:${SIM_CONTROL_PORT:-4000}
     volumes:
       - { type: bind, source: ./certs/ca.crt, target: /certs/ca.crt, read_only: true, bind: { create_host_path: false } }
+    restart: unless-stopped
+
+  front-office:
+    build: ../frontends/front-office
+    image: coldtrace-front-office
+    depends_on: [api]
+    ports:
+      - "127.0.0.1:${FRONT_OFFICE_PORT:-3000}:80"
     restart: unless-stopped
 
   simulator:
