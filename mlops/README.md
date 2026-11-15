@@ -12,7 +12,7 @@ out of range. A model will predict the temperature a few minutes ahead and raise
 | 5. Tracking and model registry with MLflow (`pipeline/tracking.py`, http://mlflow.coldtrace.test) | Done |
 | 6. Serving (`serving/`, http://api.coldtrace.test/ml/docs) | Done |
 | 7. Integration in the API and the monitor | To do |
-| 8. Automated pipeline (one command, GitHub Actions) | To do |
+| 8. Automated pipeline (`pipeline/run.py`, `.github/workflows/mlops.yml`) | Done |
 | 9. Monitoring and retraining | To do |
 
 ## Why synthetic data
@@ -182,6 +182,29 @@ evaluation. Unfinished minutes (fewer than 6 readings) are left out. Too little 
 Live check with the simulator: Thaw on S03 at 20:46. The next minute, at **3.15 °C, still under the 4 °C limit**, the
 service already answered `warning: true` with a predicted maximum of 6.2 °C.
 
+## One command and CI (step 8)
+
+**One command** runs the whole chain. Each stage is its own process, and the pipeline stops at the first failure:
+
+```powershell
+docker compose run --rm --build pipeline run.py              # prepare -> train -> register/promote -> check
+docker compose run --rm --build pipeline run.py --generate   # regenerate the 30 days of data first
+```
+
+The final **check** loads `@production` by name and makes sure it predicts. About 1 minute in total, or 3 with `--generate`.
+
+**GitHub Actions** ([.github/workflows/mlops.yml](../.github/workflows/mlops.yml)) runs on every push or pull request
+that touches `mlops/`, and can also be started by hand (**Actions** tab, then **Run workflow**). It has three jobs:
+
+| Job | What it proves |
+|---|---|
+| Unit tests | the 23 tests of the generator, pipeline and serving pass |
+| Train, register, serve | **the whole pipeline works from scratch:** a fresh MongoDB and MLflow, 3 days of generated data, prepare, train, register, check, then the model API starts and warns for a failing fridge but not for a stable one (`ci/smoke_serving.py`). The metrics and charts are kept as the `mlops-report` artifact of the run. |
+| Docker images | the generator, pipeline and model API images build |
+
+The CI model is trained on 3 days only, so its scores are lower. CI checks the pipeline, not the model's quality: that is
+the job of the 30-day run and of the promotion rule.
+
 ## Run
 
 Start the team stack first (`gateway-iot`), because this joins its Docker network. Then, from this folder:
@@ -251,5 +274,8 @@ To look at the data in Compass, open the `coldtrace_ml` database with the same c
 | `serving/app.py` | The model API: loads and hot-reloads `@production`, `/health`, `/predict`, `/forecast/{sensorId}` |
 | `serving/forecast.py` | Raw readings to per-minute rows, features of the latest minute, warning rule |
 | `serving/test_serving.py` | Tests: same resampling and features as training, history checks, door rule, endpoints |
+| `pipeline/run.py` | The whole pipeline in one command: [generate], prepare, train, check |
+| `ci/smoke_serving.py` | CI check of the model API: loads production, warns only for a failing fridge |
+| `../.github/workflows/mlops.yml` | GitHub Actions: tests, full pipeline on a fresh database and MLflow, Docker images |
 | `scripts/create-ml-user.js` | Creates or updates the least-privilege MongoDB user |
 | `.env.example` | Variables to copy to `.env` (ignored by git) |

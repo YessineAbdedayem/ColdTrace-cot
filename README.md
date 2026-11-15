@@ -42,9 +42,10 @@ Deux applications clientes sont prévues :
 │   ├── core/                      # Réservé ; aucun module Maven pour le moment
 │   └── iam/                       # Réservé ; aucune authentification implémentée ici
 ├── gateway-iot/                    # Node-RED, brokers MQTT, simulateur et stack Docker Compose
-├── mlops/                         # Pipeline MLOps : données synthétiques (fait), entraînement, MLflow, service de prédiction (à venir)
-└── infra/
-    └── proxy/                      # Proxy inverse Nginx : coldtrace.test, api.coldtrace.test (voir son README)
+├── mlops/                         # Pipeline MLOps : données, entraînement, MLflow, API du modèle, CI (voir son README)
+├── infra/
+│   └── proxy/                      # Proxy inverse Nginx : coldtrace.test, api.coldtrace.test, mlflow.coldtrace.test
+└── .github/workflows/mlops.yml     # CI GitHub Actions du pipeline MLOps
 ```
 
 Le backend reste un seul projet Maven dans `middleware/api/`, avec son moteur d'alertes.

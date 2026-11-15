@@ -6,6 +6,7 @@
 # Tests:     docker compose run --rm --build --entrypoint pytest generator -q
 # Prepare:   docker compose run --rm --build pipeline prepare.py
 # Train:     docker compose run --rm pipeline train.py
+# All:       docker compose run --rm --build pipeline run.py    (add --generate to rebuild the data)
 # MLflow:    docker compose up -d mlflow      then http://mlflow.coldtrace.test (via infra/proxy)
 # Serving:   docker compose up -d --build model-api   then http://api.coldtrace.test/ml/docs
 
@@ -42,14 +43,18 @@ services:
     networks: [coldtrace]
     profiles: [tools]
 
-  # Training pipeline: prepare.py, train.py. Writes its files to ./data (ignored by git).
+  # Training pipeline: run.py runs everything; prepare.py and train.py can also run alone.
+  # Writes its files to ./data (ignored by git).
   pipeline:
-    build: ./pipeline
+    build:
+      context: .
+      dockerfile: pipeline/Dockerfile
     environment:
       MONGO_URI: mongodb://${ML_MONGO_USER}:${ML_MONGO_PASSWORD}@mongo:27017/?authSource=admin
       ML_DB: ${ML_DB:-coldtrace_ml}
       SOURCE_DB: ${SOURCE_DB:-coldtrace}
       DATA_DIR: /data
+      SENSORS_FILE: /sensors/sensors.json
       MLFLOW_TRACKING_URI: http://mlflow:5000
     volumes:
       - ./data:/data

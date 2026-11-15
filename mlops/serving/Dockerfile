@@ -9,6 +9,9 @@ COPY serving/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY pipeline/features.py serving/*.py serving/pytest.ini ./
 
+# print logs at once, in order
+ENV PYTHONUNBUFFERED=1
+
 RUN useradd --create-home ml
 USER ml
 

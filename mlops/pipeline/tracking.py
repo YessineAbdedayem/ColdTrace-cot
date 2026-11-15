@@ -77,7 +77,6 @@ def log_run(*, booster, history, params, cli_args, summary, extra, margin, data_
         info = mlflow.lightgbm.log_model(
             booster, artifact_path="model",
             signature=infer_signature(sample_input, prediction),
-            input_example=sample_input.head(3),
             registered_model_name=MODEL_NAME,
         )
         version = info.registered_model_version
