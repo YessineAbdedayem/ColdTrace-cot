@@ -1,5 +1,8 @@
 # ColdTrace MLOps
 
+**Full explanation, with the pipeline diagram and the results:** [docs/MLOPS.md](../docs/MLOPS.md). This README is
+the technical reference: commands, options and files.
+
 Goal: warn **before** a fridge or freezer crosses its limit. Today an alert opens only once the temperature is already
 out of range. A model will predict the temperature a few minutes ahead and raise an early warning.
 

@@ -33,7 +33,7 @@ Deux applications clientes sont prévues :
 ```
 .
 ├── README.md
-├── docs/                          # Cahier des charges LaTeX, PDF et format des messages
+├── docs/                          # Cahier des charges, PDF, format des messages, MLOPS.md et ses figures
 ├── frontends/
 │   ├── front-office/              # PWA : moniteur, manifeste, service worker, icônes, tests et Nginx
 │   └── back-office/               # Réservé à la future PWA
@@ -58,7 +58,46 @@ l'installation, les mises à jour et les limites selon le navigateur.
 
 Le [format des messages](docs/MESSAGE-FORMAT.md), le [cahier des charges](docs/cahier_des_charges_coldtrace_v3.tex),
 le [document Cloud of Things](docs/Cloud_of_Things.pdf) et l'[explication de la passerelle](docs/Gateway-explained.pdf)
-sont regroupés dans `docs/`.
+sont regroupés dans `docs/`, avec la [documentation MLOps](docs/MLOPS.md).
+
+## Pipeline MLOps : alerte précoce
+
+Les règles actuelles ouvrent une alerte quand la température a **déjà** dépassé la limite. Le pipeline MLOps entraîne
+un modèle qui prédit la température maximale des 10 prochaines minutes et **prévient avant le dépassement**.
+
+![Pipeline MLOps](docs/img/mlops-pipeline.svg)
+
+| Étape | Ce qui fonctionne |
+|---|---|
+| Données | Générateur de 30 jours réalistes (10 capteurs, 750 pannes étiquetées) dans une base séparée `coldtrace_ml` |
+| Préparation | Une ligne par capteur et par minute, 16 variables calculées sur le passé, découpage par date |
+| Entraînement et évaluation | LightGBM, comparé aux règles actuelles et à deux méthodes simples sur 8 jours jamais vus |
+| Suivi et registre | MLflow (http://mlflow.coldtrace.test) : chaque entraînement, ses scores, sa courbe d'apprentissage et son modèle ; `@production` ne passe qu'à un modèle meilleur |
+| Service | API du modèle (http://api.coldtrace.test/ml/docs), rechargée automatiquement quand `@production` change |
+| Automatisation | Toute la chaîne en une commande (`run.py`) et dans GitHub Actions à chaque push |
+
+**Résultat sur les jours de test :**
+
+| | Règles actuelles | Modèle |
+|---|---|---|
+| Pannes de froid détectées | 92/92 | 92/92 |
+| Avance sur l'alerte (médiane) | 0 min | **4 min** |
+| Avance sur les pannes lentes | 0 min | **9,5 min** |
+| Fausses alertes par capteur et par jour | 0,35 | 0,44 |
+
+L'explication complète (données, variables, résultats, MLflow, API, CI, limites) est dans [docs/MLOPS.md](docs/MLOPS.md).
+Les commandes sont dans [mlops/README.md](mlops/README.md).
+
+Lancer le pipeline (avec la stack `gateway-iot` démarrée) :
+
+```powershell
+cd mlops
+docker compose up -d mlflow model-api
+docker compose run --rm --build pipeline run.py --generate
+```
+
+Les adresses `*.coldtrace.test` demandent d'ajouter ces noms au fichier hosts et de démarrer le proxy :
+voir [middleware/proxy/README.md](middleware/proxy/README.md).
 
 ## Avancement des livrables
 
