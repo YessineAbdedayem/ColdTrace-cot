@@ -1,0 +1,11 @@
+# Optional live editing: only public files are mounted read-only.
+services:
+  front-office:
+    volumes:
+      - ../frontends/front-office/index.html:/opt/jboss/frontend/index.html:ro
+      - ../frontends/front-office/monitor.css:/opt/jboss/frontend/monitor.css:ro
+      - ../frontends/front-office/monitor.js:/opt/jboss/frontend/monitor.js:ro
+      - ../frontends/front-office/pwa.js:/opt/jboss/frontend/pwa.js:ro
+      - ../frontends/front-office/sw.js:/opt/jboss/frontend/sw.js:ro
+      - ../frontends/front-office/manifest.webmanifest:/opt/jboss/frontend/manifest.webmanifest:ro
+      - ../frontends/front-office/icons:/opt/jboss/frontend/icons:ro

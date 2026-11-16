@@ -234,7 +234,7 @@ if (-not $NoMl) {
 Write-Host ""
 Write-Host "ColdTrace is running." -ForegroundColor Green
 Write-Host ""
-Write-Host "  Monitor (front-office)  http://localhost:3000"
+Write-Host "  Monitor (Undertow)      http://localhost:3000   (or FRONT_OFFICE_PORT from gateway-iot/.env)"
 Write-Host "  REST API               http://localhost:8080/api/sensors"
 Write-Host "  Login server (IAM)     http://localhost:8081/auth/login   (users admin, qualite, operateur:"
 Write-Host "                         passwords in gateway-iot/.env, IAM_*_PASSWORD)"

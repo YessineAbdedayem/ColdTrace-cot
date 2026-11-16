@@ -1,0 +1,112 @@
+# Isolated integration stack. No .env, production network, persistent volumes or published management ports.
+# Certificates are mounted read-only. CI uses a separate temporary certificate directory.
+name: coldtrace-hosting-check
+services:
+  mongo:
+    image: mongo:7
+    tmpfs: [/data/db, /data/configdb]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+  seed:
+    image: mongo:7
+    depends_on:
+      mongo: {condition: service_healthy}
+    entrypoint: ["sh", "-c", "mongosh mongodb://mongo/coldtrace --quiet --file /seed/seed-dev-sensors.js && mongosh mongodb://mongo/coldtrace --quiet --file /seed/hosting-seed.js"]
+    volumes:
+      - ../../../gateway-iot/mongo/seed-dev-sensors.js:/seed/seed-dev-sensors.js:ro
+      - ../../../gateway-iot/simulator/sensors.json:/seed/sensors.json:ro
+      - ./hosting-seed.js:/seed/hosting-seed.js:ro
+  site-broker:
+    image: eclipse-mosquitto:2.0.20
+    volumes:
+      - ../../../gateway-iot/mosquitto/site/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    tmpfs: [/mosquitto/data]
+  cloud-broker:
+    image: eclipse-mosquitto:2.0.20
+    volumes:
+      - ../../../gateway-iot/mosquitto/cloud/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ../../../gateway-iot/mosquitto/cloud/acl:/mosquitto/config/acl:ro
+      - ${HOSTING_CERTS_DIR:-../../../gateway-iot/certs}/ca.crt:/mosquitto/certs/ca.crt:ro
+      - ${HOSTING_CERTS_DIR:-../../../gateway-iot/certs}/cloud-broker.crt:/mosquitto/certs/cloud-broker.crt:ro
+      - ${HOSTING_CERTS_DIR:-../../../gateway-iot/certs}/cloud-broker.key:/mosquitto/certs/cloud-broker.key:ro
+    tmpfs: [/mosquitto/data]
+    entrypoint: ["sh", "-c", "mosquitto_passwd -c -b /mosquitto/passwd site01 integration-only-pass && mosquitto_passwd -b /mosquitto/passwd backend integration-only-pass && chown mosquitto:mosquitto /mosquitto/passwd && chmod 0700 /mosquitto/passwd && exec mosquitto -c /mosquitto/config/mosquitto.conf"]
+  node-red:
+    image: nodered/node-red:4.1
+    depends_on: [site-broker, cloud-broker]
+    volumes:
+      - ../../../gateway-iot/node-red:/source:ro
+      - ${HOSTING_CERTS_DIR:-../../../gateway-iot/certs}/ca.crt:/certs/ca.crt:ro
+    tmpfs: ["/data:uid=1000,gid=1000"]
+    entrypoint: ["sh", "-c", "cp /source/flows.json /source/flows_cred.json /source/settings.js /data/ && exec ./entrypoint.sh"]
+    environment:
+      SITE_ID: site01
+      GATEWAY_ID: gw-site01
+      SITE_BROKER_HOST: site-broker
+      SITE_BROKER_PORT: "1883"
+      CLOUD_BROKER_HOST: cloud-broker
+      CLOUD_BROKER_PORT: "8883"
+      CLOUD_GATEWAY_USER: site01
+      CLOUD_GATEWAY_PASSWORD: integration-only-pass
+      BUFFER_MAX: "1000"
+      REPLAY_BATCH: "20"
+  simulator:
+    image: node:22-alpine
+    depends_on: [site-broker]
+    volumes:
+      - ../../../gateway-iot/simulator:/source:ro
+    working_dir: /tmp/simulator
+    command: ["sh", "-c", "cp /source/*.js /source/*.json . && npm install --no-audit --no-fund && npm start"]
+    environment:
+      BROKER_URL: mqtt://site-broker:1883
+      SIM_INTERVAL_MS: "1000"
+      SIM_BAD_RATE: "0"
+      SIM_RANDOM_DOOR: "false"
+      SIM_CONTROL_PORT: "4000"
+  iam:
+    image: coldtrace-iam
+    build: ../../../middleware/iam
+    depends_on:
+      seed: {condition: service_completed_successfully}
+    tmpfs: ["/keys:uid=1000,gid=1000"]
+    environment:
+      MONGO_URI: mongodb://mongo/coldtrace
+      KEYS_DIR: /keys
+      IAM_ADMIN_PASSWORD: Integration-only-123!
+      IAM_QUALITY_PASSWORD: Integration-only-123!
+      IAM_OPERATOR_PASSWORD: Integration-only-123!
+  api:
+    image: coldtrace-api
+    build: ../../../middleware/api
+    depends_on:
+      seed: {condition: service_completed_successfully}
+      iam: {condition: service_started}
+      cloud-broker: {condition: service_started}
+    volumes:
+      - ${HOSTING_CERTS_DIR:-../../../gateway-iot/certs}/ca.crt:/certs/ca.crt:ro
+    environment:
+      MONGO_URI: mongodb://mongo/coldtrace
+      MQTT_URL: ssl://cloud-broker:8883
+      MQTT_USER: backend
+      MQTT_PASSWORD: integration-only-pass
+      MQTT_CA_PATH: /certs/ca.crt
+      IAM_URL: http://iam:8080
+      SIM_CONTROL_URL: http://simulator:4000
+      ML_FORECAST_URL: ""
+  front-office:
+    image: coldtrace-front-office-undertow
+    build:
+      context: ..
+      dockerfile: Dockerfile.wildfly
+    depends_on: [api, iam]
+    ports: ["127.0.0.1:${HOSTING_TEST_PORT:-13002}:8080"]
+  proxy:
+    image: nginx:stable-alpine
+    profiles: [proxy]
+    depends_on: [front-office]
+    volumes:
+      - ../../../middleware/proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    ports: ["127.0.0.1:${HOSTING_PROXY_TEST_PORT:-13003}:80"]

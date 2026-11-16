@@ -20,6 +20,14 @@ Deux applications clientes sont prévues :
 
 ## Technologies
 
+Le Front Office est désormais servi par **WildFly 42 / Undertow** dans le service
+`front-office`, à la même adresse locale `http://localhost:3000` par défaut.
+Les routes REST, IAM et WebSocket restent sur la même origine. Le proxy extérieur
+reste optionnel pour les noms locaux ; il ne sert aucun fichier de la PWA.
+Voir [le lancement local](docs/LANCEMENT-LOCAL.md) et
+[le rapport de migration](docs/WILDFLY-FRONTEND-MIGRATION.md) pour les propriétés CLI,
+les tests, les limites HTTPS et le retour à Nginx.
+
 | Couche | Technologies |
 |---|---|
 | Back-end / middleware | Jakarta EE 11 (WildFly), Jakarta REST, WebSocket, Security, MongoDB |
@@ -35,7 +43,7 @@ Deux applications clientes sont prévues :
 ├── README.md
 ├── docs/                          # Cahier des charges, PDF, format des messages, MLOPS.md et ses figures
 ├── frontends/
-│   ├── front-office/              # PWA : moniteur, manifeste, service worker, icônes, tests et Nginx
+│   ├── front-office/              # PWA : moniteur, manifeste, service worker, icônes, tests et Undertow
 │   └── back-office/               # Réservé à la future PWA
 ├── middleware/
 │   ├── api/                       # Projet Maven existant : ingestion, alertes, REST et WebSocket
@@ -193,7 +201,7 @@ exemple pour une démonstration.
 
 Ouvrir **http://localhost:3000/** (ou le port de `FRONT_OFFICE_PORT`). Le Front Office remplace la plupart des commandes
 de cette section. L'API conserve son port (`API_PORT`, 18080 sur le PC de développement) ; son ancien chemin `/monitor/`
-n'héberge plus le tableau de bord. Nginx sert les fichiers, transmet `/api/` et `/ws/alerts` à l'API et `/auth/` au
+n'héberge plus le tableau de bord. Le WildFly du Front Office sert les fichiers, transmet `/api/` et `/ws/alerts` à l'API et `/auth/` au
 serveur de connexion :
 
 - **Connexion :** la page s'ouvre sur un écran de connexion (`admin`, `qualite` ou `operateur`, mots de passe dans

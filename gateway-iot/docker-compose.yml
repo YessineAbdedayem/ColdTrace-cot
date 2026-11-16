@@ -7,7 +7,7 @@
 #   dev-seed     : registers the simulated sensors in MongoDB, then exits
 #   api          : Jakarta EE backend, built from ../middleware/api
 #   iam          : login server (Jakarta Security, signed tokens), built from ../middleware/iam
-#   front-office : independent monitor, REST and WebSocket proxy to api
+#   front-office : WildFly/Undertow static monitor, REST/WebSocket/auth proxy
 #
 # Before the first start:  cp .env.example .env   and   ./scripts/gen-certs.sh
 # Start:                    docker compose up -d
@@ -168,11 +168,13 @@ services:
     restart: unless-stopped
 
   front-office:
-    build: ../frontends/front-office
-    image: coldtrace-front-office
+    build:
+      context: ../frontends/front-office
+      dockerfile: Dockerfile.wildfly
+    image: coldtrace-front-office-undertow
     depends_on: [api]
     ports:
-      - "127.0.0.1:${FRONT_OFFICE_PORT:-3000}:80"
+      - "127.0.0.1:${FRONT_OFFICE_PORT:-3000}:8080"
     restart: unless-stopped
 
   simulator:

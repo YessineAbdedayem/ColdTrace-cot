@@ -1,0 +1,155 @@
+# Adapted from the professor's default-host.cli for a dedicated frontend WildFly 42.
+# No WAR is installed here. Run with --properties=frontend.properties.
+/subsystem=undertow/server=default-server/host=default-host:write-attribute(name=alias,value=[${default.aliases}])
+
+if (outcome != success) of /subsystem=undertow/configuration=handler/file=welcome-content:read-resource
+    /subsystem=undertow/configuration=handler/file=welcome-content:add(path="${default.path}",directory-listing=false,follow-symlink=false)
+else
+    /subsystem=undertow/configuration=handler/file=welcome-content:write-attribute(name=path,value="${default.path}")
+    /subsystem=undertow/configuration=handler/file=welcome-content:write-attribute(name=directory-listing,value=false)
+    /subsystem=undertow/configuration=handler/file=welcome-content:write-attribute(name=follow-symlink,value=false)
+end-if
+
+if (outcome != success) of /socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=coldtrace-api:read-resource
+    /socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=coldtrace-api:add(host="${api.host}",port=${api.port})
+else
+    /socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=coldtrace-api:write-attribute(name=host,value="${api.host}")
+    /socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=coldtrace-api:write-attribute(name=port,value=${api.port})
+end-if
+
+if (outcome != success) of /socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=coldtrace-iam:read-resource
+    /socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=coldtrace-iam:add(host="${iam.host}",port=${iam.port})
+else
+    /socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=coldtrace-iam:write-attribute(name=host,value="${iam.host}")
+    /socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=coldtrace-iam:write-attribute(name=port,value=${iam.port})
+end-if
+
+if (outcome != success) of /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-api:read-resource
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-api:add(max-retries=0)
+else
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-api:write-attribute(name=max-retries,value=0)
+end-if
+
+if (outcome != success) of /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-api/host=backend:read-resource
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-api/host=backend:add(outbound-socket-binding=coldtrace-api,path="/api",scheme=http)
+else
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-api/host=backend:write-attribute(name=outbound-socket-binding,value=coldtrace-api)
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-api/host=backend:write-attribute(name=path,value="/api")
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-api/host=backend:write-attribute(name=scheme,value=http)
+end-if
+
+if (outcome != success) of /subsystem=undertow/server=default-server/host=default-host/location=\/api:read-resource
+    /subsystem=undertow/server=default-server/host=default-host/location=\/api:add(handler=coldtrace-api)
+else
+    /subsystem=undertow/server=default-server/host=default-host/location=\/api:write-attribute(name=handler,value=coldtrace-api)
+end-if
+
+if (outcome != success) of /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-auth:read-resource
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-auth:add(max-retries=0)
+else
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-auth:write-attribute(name=max-retries,value=0)
+end-if
+
+if (outcome != success) of /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-auth/host=backend:read-resource
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-auth/host=backend:add(outbound-socket-binding=coldtrace-iam,path="/auth",scheme=http)
+else
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-auth/host=backend:write-attribute(name=outbound-socket-binding,value=coldtrace-iam)
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-auth/host=backend:write-attribute(name=path,value="/auth")
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-auth/host=backend:write-attribute(name=scheme,value=http)
+end-if
+
+if (outcome != success) of /subsystem=undertow/server=default-server/host=default-host/location=\/auth:read-resource
+    /subsystem=undertow/server=default-server/host=default-host/location=\/auth:add(handler=coldtrace-auth)
+else
+    /subsystem=undertow/server=default-server/host=default-host/location=\/auth:write-attribute(name=handler,value=coldtrace-auth)
+end-if
+
+if (outcome != success) of /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-alerts:read-resource
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-alerts:add(max-retries=0)
+else
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-alerts:write-attribute(name=max-retries,value=0)
+end-if
+
+if (outcome != success) of /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-alerts/host=backend:read-resource
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-alerts/host=backend:add(outbound-socket-binding=coldtrace-api,path="/ws",scheme=http)
+else
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-alerts/host=backend:write-attribute(name=outbound-socket-binding,value=coldtrace-api)
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-alerts/host=backend:write-attribute(name=path,value="/ws")
+    /subsystem=undertow/configuration=handler/reverse-proxy=coldtrace-alerts/host=backend:write-attribute(name=scheme,value=http)
+end-if
+
+if (outcome != success) of /subsystem=undertow/server=default-server/host=default-host/location=\/ws:read-resource
+    /subsystem=undertow/server=default-server/host=default-host/location=\/ws:add(handler=coldtrace-alerts)
+else
+    /subsystem=undertow/server=default-server/host=default-host/location=\/ws:write-attribute(name=handler,value=coldtrace-alerts)
+end-if
+
+if (outcome != success) of /subsystem=undertow/configuration=filter/response-header=coldtrace-cache:read-resource
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-cache:add(header-name=Cache-Control,header-value="no-store")
+else
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-cache:write-attribute(name=header-name,value=Cache-Control)
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-cache:write-attribute(name=header-value,value="no-store")
+end-if
+
+if (outcome != success) of /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-cache:read-resource
+    /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-cache:add(predicate="true")
+else
+    /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-cache:write-attribute(name=predicate,value="true")
+end-if
+
+if (outcome != success) of /subsystem=undertow/configuration=filter/response-header=coldtrace-nosniff:read-resource
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-nosniff:add(header-name=X-Content-Type-Options,header-value="nosniff")
+else
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-nosniff:write-attribute(name=header-name,value=X-Content-Type-Options)
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-nosniff:write-attribute(name=header-value,value="nosniff")
+end-if
+
+if (outcome != success) of /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-nosniff:read-resource
+    /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-nosniff:add(predicate="true")
+else
+    /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-nosniff:write-attribute(name=predicate,value="true")
+end-if
+
+if (outcome != success) of /subsystem=undertow/configuration=filter/response-header=coldtrace-manifest:read-resource
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-manifest:add(header-name=Content-Type,header-value="application/manifest+json")
+else
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-manifest:write-attribute(name=header-name,value=Content-Type)
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-manifest:write-attribute(name=header-value,value="application/manifest+json")
+end-if
+
+if (outcome != success) of /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-manifest:read-resource
+    /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-manifest:add(predicate="path('/manifest.webmanifest')")
+else
+    /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-manifest:write-attribute(name=predicate,value="path('/manifest.webmanifest')")
+end-if
+
+if (outcome != success) of /subsystem=undertow/configuration=filter/response-header=coldtrace-worker:read-resource
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-worker:add(header-name=Content-Type,header-value="application/javascript")
+else
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-worker:write-attribute(name=header-name,value=Content-Type)
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-worker:write-attribute(name=header-value,value="application/javascript")
+end-if
+
+if (outcome != success) of /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-worker:read-resource
+    /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-worker:add(predicate="path('/sw.js')")
+else
+    /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-worker:write-attribute(name=predicate,value="path('/sw.js')")
+end-if
+
+if (outcome != success) of /subsystem=undertow/configuration=filter/response-header=coldtrace-scope:read-resource
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-scope:add(header-name=Service-Worker-Allowed,header-value="/")
+else
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-scope:write-attribute(name=header-name,value=Service-Worker-Allowed)
+    /subsystem=undertow/configuration=filter/response-header=coldtrace-scope:write-attribute(name=header-value,value="/")
+end-if
+
+if (outcome != success) of /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-scope:read-resource
+    /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-scope:add(predicate="path('/sw.js')")
+else
+    /subsystem=undertow/server=default-server/host=default-host/filter-ref=coldtrace-scope:write-attribute(name=predicate,value="path('/sw.js')")
+end-if
+
+# Never log the WebSocket query containing access_token.
+if (outcome == success) of /subsystem=undertow/server=default-server/host=default-host/setting=access-log:read-resource
+    /subsystem=undertow/server=default-server/host=default-host/setting=access-log:write-attribute(name=predicate,value="not path-prefix('/ws')")
+end-if

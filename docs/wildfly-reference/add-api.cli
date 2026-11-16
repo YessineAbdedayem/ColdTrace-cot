@@ -1,0 +1,24 @@
+set pathTo=`:resolve-expression(expression=${api.name}-${api.version}.war)`
+set aliasTo=`:resolve-expression(expression=${api.aliases})`
+set logPrefix=`:resolve-expression(expression=${api.context}-${api.name})`
+set corsRegex=`:resolve-expression(expression="regex(pattern='^(https:\\/\\/(?:.+\\.)?${api.domains}(?::\\d{1,5})?(\\/([a-zA-Z0-9\\-_?&=%.;:+]{2,})?)*)$',value=%{i,Origin},full-match=true)")`
+set escaped=\"$corsRegex\"
+if (outcome != success) of /subsystem=undertow/server=default-server/host=${api.name}-host:read-resource
+    echo ">>> Initializing module infrastructure for: ${api.name}"
+    batch
+    /subsystem=undertow/server=default-server/host=${api.name}-host:add(alias=[$aliasTo],default-web-module=$pathTo)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/setting=access-log:add
+    /subsystem=undertow/server=default-server/host=${api.name}-host/setting=access-log:write-attribute(name=pattern,value="combined")
+    /subsystem=undertow/server=default-server/host=${api.name}-host/setting=access-log:write-attribute(name=prefix,value=$logPrefix)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref=hsts-header:add(predicate="equals(%p,443)")
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref=http-to-https:add(predicate="equals(%p,80)")
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref="Access-Control-Allow-Origin":add(predicate=$escaped)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref="Access-Control-Allow-Methods":add(predicate=$escaped)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref="Access-Control-Allow-Headers":add(predicate=$escaped)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref="Access-Control-Expose-Headers":add(predicate=$escaped)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref="Access-Control-Allow-Credentials":add(predicate=$escaped)
+    /subsystem=undertow/server=default-server/host=${api.name}-host/filter-ref="Access-Control-Max-Age":add(predicate=$escaped)
+    run-batch
+else
+    echo ">>> Module infrastructure for ${api.name}-host already exists. Skipping."
+end-if

@@ -65,7 +65,7 @@ On Windows, `.\start` from the repository root does all of this and the MLOps pa
 If the certificates are missing, `docker compose up` stops with an error
 instead of starting a broken stack. The API is on http://localhost:8080
 (change it with `API_PORT` in `.env`). The **Front Office is at http://localhost:3000/**
-(`FRONT_OFFICE_PORT`, default 3000), served by Nginx from `frontends/front-office/`.
+(`FRONT_OFFICE_PORT`, default 3000), served by WildFly/Undertow from `frontends/front-office/`.
 It forwards REST and WebSocket requests to the API, and `/auth/` to the login server; see the
 [Front Office README](../frontends/front-office/README.md).
 

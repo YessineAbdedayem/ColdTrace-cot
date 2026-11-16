@@ -10,6 +10,10 @@ const root = path.join(__dirname, "..");
 const output = path.join(root, "test-results");
 const base = process.env.FRONT_OFFICE_URL || "http://localhost:3000";
 const checks = [];
+const username = process.env.PWA_TEST_USER;
+const password = process.env.PWA_TEST_PASSWORD;
+assert(username && password, "Set PWA_TEST_USER and PWA_TEST_PASSWORD for a dedicated test account");
+let apiHeaders;
 function pass(name) { checks.push(name); console.log("PASS: " + name); }
 
 (async () => {
@@ -40,7 +44,13 @@ function pass(name) { checks.push(name); console.log("PASS: " + name); }
   const tile = id => page.locator(".tile").filter({ has: page.locator(".tile-id", { hasText: new RegExp("^" + id + "$") }) });
   try {
     await page.goto(base, { waitUntil: "domcontentloaded" });
+    assert.equal((await context.request.get(base + "/api/sensors")).status(), 401);
+    await page.locator("#login-user").fill(username);
+    await page.locator("#login-password").fill(password);
+    await page.locator("#login-submit").click();
     await ready();
+    apiHeaders = await page.evaluate(() => ({ Authorization: "Bearer " + auth.token }));
+    pass("Login through Undertow and rejection of unauthenticated API requests");
     await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller), {}, { timeout: 45000 });
     pass("Real dashboard: 10 sensors, 3 sites, REST/WebSocket and active service worker");
     assert.equal(await page.locator(".site").count(), 3);
@@ -69,10 +79,10 @@ function pass(name) { checks.push(name); console.log("PASS: " + name); }
     pass("Manifest, icon responses, worker headers and Chrome installability criteria");
 
     if (process.env.PWA_TEST_ACTIONS === "1") {
-      const faultResponse = await context.request.get(base + "/api/dev/faults");
+      const faultResponse = await context.request.get(base + "/api/dev/faults", { headers: apiHeaders });
       const data = await faultResponse.json();
       const faults = Array.isArray(data) ? data : data.sensors;
-      const incidents = await (await context.request.get(base + "/api/incidents?status=open&limit=200")).json();
+      const incidents = await (await context.request.get(base + "/api/incidents?status=open&limit=200", { headers: apiHeaders })).json();
       const selected = faults.find(s => s.fault === "none" && !incidents.some(i => i.sensorId === s.sensorId));
       assert(selected, "Need an idle sensor without an open incident");
       savedFault = { sensorId: selected.sensorId, fault: selected.fault };
@@ -96,7 +106,7 @@ function pass(name) { checks.push(name); console.log("PASS: " + name); }
       if (await ack.count()) {
         await ack.click();
         const form = page.locator(".ack-form:visible").first();
-        await form.locator("input").fill("PWA layout check");
+        await form.locator("textarea").fill("PWA layout check");
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "Open form overflow at " + width);
         const rect = await form.boundingBox();
         assert(rect.x >= 0 && rect.x + rect.width <= width + 1);
@@ -157,11 +167,16 @@ function pass(name) { checks.push(name); console.log("PASS: " + name); }
     assert.equal(keys.length, new Set(keys).size);
     assert.deepEqual(errors, []);
     pass("No duplicated history events or uncaught page errors");
+    await page.locator("#logout").click();
+    await page.waitForFunction(() => !document.querySelector("#login").hidden);
+    assert.equal(await page.locator(".tile").count(), 0);
+    assert.equal(await page.evaluate(() => sessionStorage.getItem("coldtrace.session")), null);
+    pass("Logout clears the session and displayed operational data");
   } finally {
     await context.setOffline(false);
     await page.unroute("**/api/**");
     if (savedFault) {
-      const response = await context.request.post(base + "/api/dev/faults", { data: savedFault });
+      const response = await context.request.post(base + "/api/dev/faults", { data: savedFault, headers: apiHeaders });
       assert.equal(response.status(), 200, "Restore tested sensor");
     }
     await context.close();
@@ -179,6 +194,9 @@ function pass(name) { checks.push(name); console.log("PASS: " + name); }
       response.writeHead(503); response.end(); return;
     }
     let content = fs.readFileSync(filename);
+    // This origin tests only pwa.js and sw.js: it has no IAM or operational backend.
+    // Leave the login overlay hidden instead of starting monitor.js against a fake API.
+    if (route === "/" || route === "/index.html") content = Buffer.from(content.toString().replace('<script src="monitor.js"></script>', ""));
     if (route === "/sw.js") content = Buffer.from(content.toString().replace(/CACHE_PREFIX \+ "[^"]+"/, 'CACHE_PREFIX + "' + version + '"'));
     if (route === "/monitor.css") content = Buffer.concat([content, Buffer.from("\n/* " + version + " */")]);
     response.writeHead(200, { "Content-Type": types[path.extname(filename)] || "application/octet-stream", "Cache-Control": "no-store" });

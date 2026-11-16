@@ -3,7 +3,11 @@
 The existing monitor is now an installable Progressive Web Application with real
 backend data, simulator controls and incident acknowledgement. It retains the dark
 industrial interface and its three sites/ten sensors. It is served independently
-of the WildFly WAR, with no frontend framework or runtime npm dependency.
+of the API WAR, in a dedicated WildFly 42/Undertow container, with no frontend
+framework or runtime npm dependency. The original Nginx image is retained for rollback.
+
+See [the migration report](../../docs/WILDFLY-FRONTEND-MIGRATION.md) for CLI properties,
+production requirements, validation and exact rollback commands.
 
 **Early warnings** from the MLOps model (`early_warning` incidents, see
 [middleware/api/README.md](../../middleware/api/README.md)) appear in yellow:
@@ -17,9 +21,9 @@ The real alert keeps its orange style.
 **Login.** The monitor opens on a sign-in screen. The accounts come from the login server
 ([middleware/iam](../../middleware/iam/README.md)): `admin`, `qualite`, `operateur`, with passwords in
 `gateway-iot/.env` (`IAM_*_PASSWORD`).
-- **Where login goes:** Nginx forwards `/auth/` to the IAM, so login stays on the page's origin and needs no CORS.
+- **Where login goes:** Undertow forwards `/auth/` to the IAM, so login stays on the page's origin and needs no CORS.
 - **The token** is sent as `Authorization: Bearer` on every `/api/` call, and as `?access_token=` on the alert WebSocket.
-  Nginx doesn't write that WebSocket line to its access log.
+  Undertow has no access log enabled; the optional external proxy excludes that WebSocket path.
 - **The session** lives in `sessionStorage`: closing the tab, the token's expiry (8 h), any 401 from the API, or
   **Log out** returns to the sign-in screen, and clears the sensors and incidents from the page.
 - **The header** shows the user's name and roles.
@@ -53,23 +57,26 @@ With the backend already running, build/start only the frontend:
 docker compose up -d --build --no-deps front-office
 ```
 
-After editing HTML/CSS/JavaScript or `nginx.conf`, rebuild `front-office` with the
-same command. Files are copied into the image; they are not mounted live.
+After editing HTML/CSS/JavaScript or `wildfly/`, rebuild `front-office` with the
+same command. Only public files are copied into the image. For live development,
+add `-f docker-compose.yml -f docker-compose.frontend-dev.yml` before `up`;
+the individual public assets are then mounted read-only.
 
 ## REST and WebSocket configuration
 
-| Browser request | Nginx forwards to |
+| Browser request | WildFly/Undertow serves or forwards to |
 |---|---|
-| `GET /` and static assets | Files in this directory, copied into the Nginx image |
+| `GET /` and static assets | Allowlisted public files copied into `/opt/jboss/frontend` |
 | `/api/*` | `http://api:8080/api/*`, preserving path, query string, method and body |
 | `/ws/alerts` | The same backend path with HTTP/1.1 WebSocket upgrade headers |
+| `/auth/*` | `http://iam:8080/auth/*`, preserving method, body and headers |
 
 The browser only talks to its own frontend origin. It never needs a Docker hostname
-or the backend host port. `nginx.conf` is the single place that names the API service
-and its internal port. Docker DNS is re-resolved so the proxy can recover after API
+or the backend host port. `wildfly/frontend.properties` names the API/IAM services
+and their internal ports. DNS caching is bounded so the proxy can recover after API
 container replacement. The browser maintains one WebSocket and one reconnect timer,
 with backoff from 1 to 15 seconds; offline browsers do not run reconnect loops.
-Nginx forwards requests to the existing development fault proxy; it does not connect
+Undertow forwards requests to the existing development fault proxy; it does not connect
 the browser directly to the simulator. Backend CORS/security settings are unchanged.
 
 The old URL `http://localhost:<API_PORT>/monitor/` is no longer served. Use the new
@@ -124,7 +131,7 @@ only as an enhancement; offline use falls back to system fonts.
 No measurements, incidents, gateway responses, operator names, comments or commands
 are stored in Cache Storage, localStorage or IndexedDB. `/api/*`, `/ws/alerts`,
 mutations and third-party assets are excluded from service-worker interception.
-REST requests use `cache: no-store`; Nginx also marks API responses `no-store`.
+REST requests use `cache: no-store`; Undertow also marks responses `no-store`.
 
 | Connection state | UI behavior |
 |---|---|
@@ -162,7 +169,7 @@ an unfinished form automatically.
 
 Static requests use network-first with HTTP cache bypass, falling back to the
 installed snapshot only when the static server is unreachable. Online assets are
-therefore not permanently pinned behind an old worker. Nginx serves `sw.js` with
+therefore not permanently pinned behind an old worker. Undertow serves `sw.js` with
 JavaScript MIME type, root scope and `no-store`; the manifest is served as
 `application/manifest+json` with revalidation.
 
@@ -180,6 +187,8 @@ From this folder:
 npm ci
 npm test
 npx playwright install chromium
+$env:PWA_TEST_USER = 'operateur'
+# Set PWA_TEST_PASSWORD to this dedicated test account's password without committing it.
 npm run test:browser
 ```
 

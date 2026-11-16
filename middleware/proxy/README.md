@@ -48,9 +48,16 @@ To stop it, run `docker compose down` from this folder. The team stack keeps run
 ## How it works
 
 - The browser looks up `coldtrace.test` in the hosts file and gets 127.0.0.1. It then connects to port 80 on your PC, where this proxy listens.
-- Nginx reads the requested name (the `Host` header) and forwards the request to the matching container, `front-office:80` or `api:8080`.
+- Nginx reads the requested name (the `Host` header) and forwards the request to the matching container, `front-office:8080` (WildFly/Undertow) or `api:8080`.
 - Nginx resolves those names through Docker's DNS on each request. So the proxy starts even if a service is down, and it follows a container after it is recreated.
 - Any other name gets a plain 404.
+
+The Front Office's files are served by Undertow, with same-origin API, IAM and
+WebSocket forwarding. This proxy only routes requests. It excludes `/ws/alerts`
+from access logs because its query contains an access token. Local HTTP
+`*.coldtrace.test` is not a secure context for PWA installation: use localhost
+in development or configure a trusted HTTPS ingress in production.
+See [migration and rollback](../../docs/WILDFLY-FRONTEND-MIGRATION.md).
 
 ## Adding a service later
 

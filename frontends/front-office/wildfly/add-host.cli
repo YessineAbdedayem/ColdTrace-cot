@@ -1,0 +1,23 @@
+# Optional back-office only. First copy a real public artifact to host.path.
+# Not executed by Dockerfile.wildfly while back-office contains only .gitkeep.
+if (outcome != success) of /subsystem=undertow/configuration=handler/file=${host.key}-content:read-resource
+    /subsystem=undertow/configuration=handler/file=${host.key}-content:add(path="${host.path}",directory-listing=false,follow-symlink=false)
+else
+    /subsystem=undertow/configuration=handler/file=${host.key}-content:write-attribute(name=path,value="${host.path}")
+end-if
+if (outcome != success) of /subsystem=undertow/server=default-server/host=${host.key}-host:read-resource
+    /subsystem=undertow/server=default-server/host=${host.key}-host:add(alias=[${host.aliases}])
+else
+    /subsystem=undertow/server=default-server/host=${host.key}-host:write-attribute(name=alias,value=[${host.aliases}])
+end-if
+if (outcome != success) of /subsystem=undertow/server=default-server/host=${host.key}-host/location=\/:read-resource
+    /subsystem=undertow/server=default-server/host=${host.key}-host/location=\/:add(handler=${host.key}-content)
+else
+    /subsystem=undertow/server=default-server/host=${host.key}-host/location=\/:write-attribute(name=handler,value=${host.key}-content)
+end-if
+if (outcome != success) of /subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=coldtrace-cache:read-resource
+    /subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=coldtrace-cache:add
+end-if
+if (outcome != success) of /subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=coldtrace-nosniff:read-resource
+    /subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=coldtrace-nosniff:add
+end-if

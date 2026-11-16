@@ -1,0 +1,12 @@
+FROM quay.io/wildfly/wildfly:42.0.0.Final-jdk21
+# Copy only public assets, never the repository, tests, configuration or credentials.
+COPY index.html monitor.css monitor.js pwa.js sw.js manifest.webmanifest /opt/jboss/frontend/
+COPY icons/ /opt/jboss/frontend/icons/
+COPY wildfly/ /opt/jboss/frontend-config/
+ARG FRONTEND_PROPERTIES=frontend.properties
+RUN { echo 'embed-server --std-out=discard'; cat /opt/jboss/frontend-config/default-host.cli; echo 'stop-embedded-server'; } > /tmp/frontend-build.cli \
+ && /opt/jboss/wildfly/bin/jboss-cli.sh --resolve-parameter-values --file=/tmp/frontend-build.cli \
+    --properties=/opt/jboss/frontend-config/${FRONTEND_PROPERTIES} \
+ && rm -rf /opt/jboss/wildfly/standalone/configuration/standalone_xml_history
+EXPOSE 8080
+ENV JAVA_OPTS_APPEND="-Dsun.net.inetaddr.ttl=5 -Dsun.net.inetaddr.negative.ttl=1"

@@ -1,0 +1,9 @@
+# Rollback only: combine with docker-compose.yml. No persistent volume changes.
+services:
+  front-office:
+    build:
+      context: ../frontends/front-office
+      dockerfile: Dockerfile
+    image: coldtrace-front-office
+    ports: !override
+      - "127.0.0.1:${FRONT_OFFICE_PORT:-3000}:80"

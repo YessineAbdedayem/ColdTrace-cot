@@ -1,0 +1,23 @@
+batch
+set pathTo=`:resolve-expression(expression=${host.path})`
+set aliasTo=`:resolve-expression(expression=${host.aliases})`
+set contentTo=`:resolve-expression(expression=${host.key}-content)`
+set spaPath=`:resolve-expression(expression=${host.path}/index.html)`
+set corsRegex=`:resolve-expression(expression="regex(pattern='^(https:\\/\\/(?:.+\\.)?${host.domains}(?::\\d{1,5})?(\\/([a-zA-Z0-9\\-_?&=%.;:+]{2,})?)*)$',value=%{i,Origin},full-match=true)"`
+set escaped=\"$corsRegex\"
+/subsystem=undertow/configuration=handler/file=${host.key}-content:add(path=$pathTo)
+/subsystem=undertow/server=default-server/host=${host.key}-host:add(alias=[$aliasTo])
+/subsystem=undertow/server=default-server/host=${host.key}-host/location=\/:add(handler=$contentTo)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=hsts-header:add(predicate="equals(%p,443)")
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=http-to-https:add(predicate="equals(%p,80)")
+/subsystem=undertow/configuration=filter/error-page=spa-${host.key}-router:add(code="404",path=$spaPath)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=spa-${host.key}-router:add(predicate="true")
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=cache-control:add(predicate="true")
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=content-type-options:add(predicate="true")
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref="Access-Control-Allow-Origin":add(predicate=$escaped)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref="Access-Control-Allow-Methods":add(predicate=$escaped)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref="Access-Control-Allow-Headers":add(predicate=$escaped)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref="Access-Control-Expose-Headers":add(predicate=$escaped)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref="Access-Control-Allow-Credentials":add(predicate=$escaped)
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref="Access-Control-Max-Age":add(predicate=$escaped)
+run-batch
