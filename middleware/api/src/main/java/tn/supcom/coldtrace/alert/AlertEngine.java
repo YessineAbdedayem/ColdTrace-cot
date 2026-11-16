@@ -39,12 +39,19 @@ import java.util.logging.Logger;
  *
  * Metrics: temperature and humidity (limits from the profile), door (open = breach),
  * and silence (no reading from a known sensor for {@link AlertRules#SILENT_AFTER_SECONDS}).
+ * The early_warning metric comes from the model's forecasts instead of readings: see {@link #applyForecast}.
  */
 @ApplicationScoped
 public class AlertEngine {
 
     private static final Logger LOG = Logger.getLogger(AlertEngine.class.getName());
     private static final String SILENCE = "silence";
+    /** Opened by {@link EarlyWarningPoller} when the model predicts the temperature limit will be crossed. */
+    static final String EARLY_WARNING = "early_warning";
+    // closeReason of an early warning
+    static final String CLOSED_CALM = "calm";               // the forecasts went back below the limit
+    static final String CLOSED_REPLACED = "replaced";       // the real temperature incident opened
+    static final String CLOSED_NO_FORECAST = "no_forecast"; // no forecast for EARLY_WARNING_STALE_SECONDS
     private static final long SILENCE_CHECK_SECONDS = 15;
 
     @Inject
@@ -150,6 +157,78 @@ public class AlertEngine {
         }
     }
 
+    /**
+     * Applies one forecast of the early-warning model to the sensor's "early_warning" incident.
+     * Its value is the temperature when it opened, and peakValue the highest predicted maximum while it lasts.
+     */
+    public void applyForecast(String siteId, Forecast f) {
+        MongoCollection<Document> incidents = db.getCollection("incidents");
+        Bson openWarning = openIncident(f.sensorId(), EARLY_WARNING);
+        Document current = incidents.find(openWarning).first();
+        boolean temperatureOpen = incidents.find(openIncident(f.sensorId(), "temperature")).first() != null;
+        int calm = current == null ? 0 : current.getInteger("inRangeReadings", 0);
+        Date now = new Date();
+        Document lastTemperature = temperatureOpen ? null : incidents.find(Filters.and(
+                        Filters.eq("sensorId", f.sensorId()), Filters.eq("metric", "temperature"),
+                        Filters.eq("status", Incident.CLOSED)))
+                .sort(Sorts.descending("closedAt")).limit(1).first();
+        Date closedAt = lastTemperature == null ? null : lastTemperature.getDate("closedAt");
+        boolean justRecovered = closedAt != null && AlertRules.isJustRecovered(
+                Duration.between(closedAt.toInstant(), now.toInstant()).getSeconds());
+        if (justRecovered) {
+            // Hold back only while the unit cools down after its alert: warming again is a new failure.
+            justRecovered = !AlertRules.isWarmingAgain(
+                    readingSince(siteId, f.sensorId(), closedAt, Sorts.descending("ts")),
+                    readingSince(siteId, f.sensorId(), closedAt, Sorts.ascending("temperature")));
+        }
+
+        switch (AlertRules.decideEarlyWarning(current != null, f.warning(), temperatureOpen, justRecovered, calm)) {
+            case NONE -> { }
+            case OPEN -> {
+                Document doc = Incident.newOpenDocument(siteId, f.sensorId(), EARLY_WARNING, f.temperature(),
+                                null, f.limitMax(), now)
+                        .append("peakValue", f.predictedMax())
+                        .append("modelVersion", f.modelVersion())
+                        .append("horizonMin", f.horizonMin())
+                        .append("lastForecastAt", now);
+                insertAndBroadcast(doc);
+            }
+            case STILL_BREACHED -> incidents.updateOne(openWarning, Updates.combine(
+                    Updates.set("inRangeReadings", 0), Updates.max("peakValue", f.predictedMax()),
+                    Updates.set("lastForecastAt", now)));
+            case RECOVERING -> incidents.updateOne(openWarning, Updates.combine(
+                    Updates.inc("inRangeReadings", 1), Updates.set("lastForecastAt", now)));
+            case CLOSE -> close(openWarning, now, temperatureOpen ? CLOSED_REPLACED : CLOSED_CALM);
+        }
+    }
+
+    /** One temperature reading of the sensor since `since`: the first in `order` (latest, or lowest). */
+    private Double readingSince(String siteId, String sensorId, Date since, Bson order) {
+        Bson filter = Filters.and(Filters.eq("sensorId", sensorId), Filters.gte("ts", since),
+                Filters.ne("temperature", null));
+        if (siteId != null) {
+            filter = Filters.and(Filters.eq("siteId", siteId), filter);   // uses the site_sensor_ts index
+        }
+        Document d = db.getCollection("measurements").find(filter).sort(order).limit(1).first();
+        return d == null || !(d.get("temperature") instanceof Number n) ? null : n.doubleValue();
+    }
+
+    /**
+     * Closes the open early warnings that got no forecast for {@link AlertRules#EARLY_WARNING_STALE_SECONDS}.
+     * Without this, a warning would stay open for ever when the model API stops answering for its sensor.
+     */
+    public void closeStaleEarlyWarnings() {
+        Instant now = Instant.now();
+        for (Document w : db.getCollection("incidents").find(
+                Filters.and(Filters.eq("metric", EARLY_WARNING), Filters.eq("status", Incident.OPEN)))) {
+            Date last = w.getDate("lastForecastAt") != null ? w.getDate("lastForecastAt") : w.getDate("openedAt");
+            if (last == null || AlertRules.isForecastStale(Duration.between(last.toInstant(), now).getSeconds())) {
+                close(Filters.and(Filters.eq("_id", w.get("_id")), Filters.eq("status", Incident.OPEN)),
+                        Date.from(now), CLOSED_NO_FORECAST);
+            }
+        }
+    }
+
     private static Bson openIncident(String sensorId, String metric) {
         return Filters.and(
                 Filters.eq("sensorId", sensorId),
@@ -159,24 +238,41 @@ public class AlertEngine {
 
     private void open(String siteId, String sensorId, String metric, double value, Double min, Double max,
                       Date openedAt) {
-        Document doc = Incident.newOpenDocument(siteId, sensorId, metric, value, min, max, openedAt);
+        if (insertAndBroadcast(Incident.newOpenDocument(siteId, sensorId, metric, value, min, max, openedAt))
+                && "temperature".equals(metric)) {
+            // The real alert replaces the early warning that announced it.
+            close(openIncident(sensorId, EARLY_WARNING), openedAt, CLOSED_REPLACED);
+        }
+    }
+
+    /** @return false when an open incident for this sensor and metric already existed */
+    private boolean insertAndBroadcast(Document doc) {
         try {
             db.getCollection("incidents").insertOne(doc);
         } catch (MongoWriteException e) {
             if (e.getError().getCategory() != ErrorCategory.DUPLICATE_KEY) {
                 throw e;
             }
-            return; // the partial unique index already holds an open incident for this sensor and metric
+            return false; // the partial unique index already holds an open incident for this sensor and metric
         }
-        LOG.info("Incident opened: " + sensorId + " " + metric + "=" + value);
+        LOG.info("Incident opened: " + doc.getString("sensorId") + " " + doc.getString("metric")
+                + "=" + doc.get("value"));
         broadcaster.broadcast(new AlertEvent(AlertEvent.OPENED, Incident.fromDocument(doc)));
+        return true;
     }
 
     private void close(Bson openIncident, Date readingTime) {
+        close(openIncident, readingTime, null);
+    }
+
+    /** @param reason stored as closeReason when not null */
+    private void close(Bson openIncident, Date readingTime, String reason) {
+        Bson update = Updates.combine(Updates.set("status", Incident.CLOSED), Updates.set("closedAt", readingTime));
+        if (reason != null) {
+            update = Updates.combine(update, Updates.set("closeReason", reason));
+        }
         Document closed = db.getCollection("incidents").findOneAndUpdate(
-                openIncident,
-                Updates.combine(Updates.set("status", Incident.CLOSED), Updates.set("closedAt", readingTime)),
-                new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER));
+                openIncident, update, new FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER));
         if (closed != null) {
             LOG.info("Incident closed: " + closed.getString("sensorId") + " " + closed.getString("metric"));
             broadcaster.broadcast(new AlertEvent(AlertEvent.CLOSED, Incident.fromDocument(closed)));

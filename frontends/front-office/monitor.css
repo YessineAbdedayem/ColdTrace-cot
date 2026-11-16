@@ -18,6 +18,8 @@
   --hazard: #ff5b1a;
   --hazard-glow: rgba(255, 91, 26, 0.35);
   --amber: #ffb52e;
+  --forecast: #f2e85c; /* early warning: the model predicts the limit will be crossed */
+  --forecast-glow: rgba(242, 232, 92, 0.22);
   --signal-off: #8a7f9e;
 
   --f-stencil: "Big Shoulders Stencil Display", "Impact", sans-serif;
@@ -223,6 +225,12 @@ button:focus-visible { outline: 2px solid var(--frost); outline-offset: 2px; }
 .tile.door-open:not(.alarm) { --edge: rgba(255, 181, 46, 0.7); }
 .tile.door-open:not(.alarm) .tile-flag { color: var(--amber); }
 
+/* early warning: shown before the alarm, in yellow rather than the alarm's orange (the logbook row is dashed) */
+.tile.forecast { --edge: var(--forecast); box-shadow: 0 0 0 1px var(--forecast), 0 0 22px var(--forecast-glow); }
+.tile.forecast .tile-flag { color: var(--forecast); }
+.tile.forecast .t-val { color: var(--forecast); }
+.tile.forecast .spark-line { stroke: var(--forecast); }
+
 .tile.silent { --edge: rgba(138, 127, 158, 0.6); }
 .tile.silent .t-val, .tile.silent .tile-stats dd { color: var(--signal-off); text-shadow: none; }
 .tile.silent .spark-line { stroke: var(--signal-off); stroke-dasharray: 3 4; }
@@ -272,6 +280,8 @@ button:focus-visible { outline: 2px solid var(--frost); outline-offset: 2px; }
 }
 .incident.m-door { border-left-color: var(--amber); background: rgba(255, 181, 46, 0.07); }
 .incident.m-silence { border-left-color: var(--signal-off); background: rgba(138, 127, 158, 0.08); }
+.incident.m-early_warning { border-left: 3px dashed var(--forecast); background: rgba(242, 232, 92, 0.07); }
+.incident.m-early_warning .what { color: var(--forecast); }
 .incident .who { font: 800 20px var(--f-stencil); letter-spacing: 0.05em; color: var(--ice); }
 .incident .what { font: 600 14px var(--f-ui); text-transform: uppercase; letter-spacing: 0.08em; color: var(--frost); }
 .incident .when { font: 400 11px var(--f-mono); color: var(--mist); text-align: right; }
@@ -311,6 +321,8 @@ button:focus-visible { outline: 2px solid var(--frost); outline-offset: 2px; }
 .feed li.opened b { color: var(--hazard); }
 .feed li.closed b { color: var(--frost); }
 .feed li.acknowledged b { color: var(--amber); }
+.feed li.m-early_warning.opened b { color: var(--forecast); }
+.feed li.m-early_warning.flash { background: rgba(242, 232, 92, 0.12); }
 .feed li.flash { background: rgba(255, 91, 26, 0.14); }
 
 .empty { font: 400 12px var(--f-mono); color: var(--frost); margin: 6px 0 0; }

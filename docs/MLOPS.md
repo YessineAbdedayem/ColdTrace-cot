@@ -45,7 +45,10 @@ model changes, or when a teammate wants to check that everything still works.
 | Serving | An API that loads `@production` by name and reloads it when it changes | http://api.coldtrace.test/ml/docs |
 | Automation | The whole chain in one command | `docker compose run --rm pipeline run.py` |
 | CI | Tests, full pipeline from scratch, API check and Docker images on every push | GitHub, **Actions** tab |
-| Tests | 23 automated tests (generator 7, pipeline 8, serving 8) | run by CI |
+| Tests | 52 automated tests (generator 7, pipeline 34, serving 11) | run by CI |
+| Live monitoring | Each live forecast is saved and scored 10 min later; live error and warning accuracy per model version | http://localhost:8001/monitoring, MLflow experiment `coldtrace-monitoring` |
+| Drift detection | Live inputs compared with the training data, input by input (PSI): `ok`, `watch` or `drift` | `drift` in http://localhost:8001/monitoring |
+| Automatic retraining | On lasting high error, lasting drift, or age: retrains with live data, promotes only if better | `retraining` in http://localhost:8001/monitoring, MLflow tag `trigger` |
 
 **Main result:** on the test days, the model catches **all 92 cooling failures**, **4 minutes before the current rule
 (median)**, and **9.5 minutes before it on slow failures**.
@@ -285,7 +288,7 @@ with `--generate`.
 
 | Job | What it proves |
 |---|---|
-| Unit tests | the 23 tests pass |
+| Unit tests | the 52 tests pass |
 | Whole pipeline from scratch | on a clean machine, with an empty MongoDB and MLflow: generate 3 days, prepare, train, register, check. Then the model API starts and must warn for a failing fridge and stay quiet for a stable one. The charts and scores are kept with the run (`mlops-report`). |
 | Docker images | the generator, pipeline and model API images build |
 
@@ -351,11 +354,24 @@ Check:
   ones.
 - **False alarms:** slightly more than today's rule (0.44 vs 0.35 per sensor per day).
 - **Local MLflow:** it runs on one PC. In a real deployment it would be a shared server.
+- **The simulator is too fast and too regular:** its Thaw crosses the limit in about 40 seconds, faster than a
+  per-minute model can warn, and its inputs are much flatter than the training data, so drift is permanent. On a
+  realistic slow rise, the early warning opened at 3.0 °C, about 5 minutes before the limit.
+
+**Done since this document was first written** (details in [mlops/README.md](../mlops/README.md) and
+[middleware/api/README.md](../middleware/api/README.md)):
+
+1. **Warnings in the monitor:** the Java API calls `/ml/forecast` every 30 s and opens an `early_warning` incident,
+   shown in yellow, before the real alert.
+2. **Monitoring:** each live prediction is saved and compared 10 minutes later with what really happened (live error,
+   precision, recall per model version), and the live inputs are checked for drift (PSI).
+3. **Automatic retraining:** on lasting error, lasting drift, or age, the pipeline retrains with recent live readings.
+   The new version replaces production only if it is better.
 
 **Next steps:**
 
-1. **Warnings in the monitor:** the Java API calls `/ml/forecast` and shows an "early warning" before the alert.
-2. **Monitoring:** store each prediction next to what really happened, watch the error over time, and retrain when it
-   grows.
-3. **Real data:** when the ESP32 sensors arrive, retrain on their readings with the same pipeline.
-4. **LLMOps:** an assistant that writes incident reports, with versioned prompts and test cases.
+1. **Real data:** when the ESP32 sensors arrive, the same monitoring shows at once whether the model fits, and
+   retraining uses their readings.
+2. **A more realistic simulator** (slower failures, door openings, noise), so the demo shows early warnings and no
+   permanent drift.
+3. **LLMOps:** an assistant that writes incident reports, with versioned prompts and test cases.

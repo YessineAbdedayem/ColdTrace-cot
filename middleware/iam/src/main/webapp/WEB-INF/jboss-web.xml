@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- WildFly: run Jakarta Security in the "other" application security domain. The Dockerfile sets that domain's
+     integrated-jaspi to false, so the callers our mechanism logs in (BearerTokenMechanism) are trusted as they are,
+     instead of being looked up again in WildFly's own user files. -->
+<jboss-web xmlns="urn:jboss:jakartaee:1.0"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="urn:jboss:jakartaee:1.0 https://www.jboss.org/schema/jbossas/jboss-web_15_0.xsd"
+           version="15.0">
+    <security-domain>other</security-domain>
+</jboss-web>

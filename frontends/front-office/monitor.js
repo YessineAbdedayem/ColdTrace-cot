@@ -4,7 +4,16 @@
 
 const POLL_MS = 5000;
 const SILENT_AFTER_S = 60;
-const METRIC_LABEL = { temperature: "Temperature", humidity: "Humidity", door: "Door open", silence: "No signal" };
+const METRIC_LABEL = {
+  temperature: "Temperature", humidity: "Humidity", door: "Door open", silence: "No signal",
+  early_warning: "Early warning"
+};
+// why an early warning closed (incident.closeReason)
+const CLOSE_REASON = {
+  calm: "closed: forecast back to normal",
+  replaced: "replaced by the real alert",
+  no_forecast: "closed: no forecast for 3 min"
+};
 // incidents written before the "metric" field existed have no metric: show them generically
 const metricLabel = m => METRIC_LABEL[m] || m || "Incident";
 const FAULT_LABEL = { door_open: "door open", temp_rise: "thawing (cooling failure)", silent: "muted", none: "normal" };
@@ -233,10 +242,14 @@ function updateTile(sensor) {
   const alarm = metricOpen("temperature") || metricOpen("humidity");
   const door = metricOpen("door") || r.doorOpen === true;
   const silent = metricOpen("silence") || silentFor > SILENT_AFTER_S;
+  // the model predicts the limit will be crossed; the real alert replaces it
+  const forecast = metricOpen("early_warning") && !alarm;
   t.el.classList.toggle("alarm", alarm);
   t.el.classList.toggle("door-open", door);
   t.el.classList.toggle("silent", silent);
-  t.flag.textContent = alarm ? "Out of range" : silent ? "No signal" : door ? "Door open" : r.replayed ? "replayed" : "";
+  t.el.classList.toggle("forecast", forecast);
+  t.flag.textContent = alarm ? "Out of range" : silent ? "No signal" : forecast ? "Early warning"
+    : door ? "Door open" : r.replayed ? "replayed" : "";
 
   // a fresh reading makes the tile breathe once
   if (r.ts && t.lastTs && r.ts !== t.lastTs && t.el.classList.contains("settled")) {
@@ -282,6 +295,12 @@ function drawSpark(t, values, limits) {
 function incidentDetail(i) {
   if (i.metric === "door") return "door open since " + hhmmss(i.openedAt);
   if (i.metric === "silence") return `no reading for ${fmt(i.peakValue, 0)} s`;
+  if (i.metric === "early_warning") {
+    // value = temperature when it opened, peakValue = highest predicted maximum, thresholdMax = the limit
+    const model = i.modelVersion ? ` · model v${i.modelVersion}` : "";
+    return `forecast ${fmt(i.peakValue)} °C within ${i.horizonMin || 10} min · limit ${fmt(i.thresholdMax)} °C`
+      + ` · was ${fmt(i.value)} °C${model}`;
+  }
   const unit = i.metric === "humidity" ? " %" : " °C";
   const limit = i.thresholdMax != null && i.peakValue > i.thresholdMax ? "max " + fmt(i.thresholdMax) : "min " + fmt(i.thresholdMin);
   return `peak ${fmt(i.peakValue)}${unit} · ${limit}${unit}`;
@@ -462,7 +481,9 @@ function addFeed(kind, incident, at, flash) {
     text.append(b, document.createTextNode(` acknowledged by ${incident.acknowledgedBy || "operator"}`));
   } else {
     b.textContent = (kind === "opened" ? "▲ " : "▼ ") + (incident.sensorId || "Unknown sensor") + " " + metricLabel(incident.metric);
-    text.append(b, document.createTextNode(kind === "opened" ? " opened" : " closed"));
+    const closedText = CLOSE_REASON[incident.closeReason] ? " " + CLOSE_REASON[incident.closeReason] : " closed";
+    text.append(b, document.createTextNode(kind === "opened" ? " opened" : closedText));
+    if (incident.metric === "early_warning") li.classList.add("m-early_warning");
   }
   li.append(time, text);
   feed.prepend(li);

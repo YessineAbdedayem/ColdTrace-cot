@@ -1,2 +1,6 @@
 # Legacy generated output left in place during the API source relocation.
 /api-rest/target/
+
+# Personal notes and logs, kept out of the repository
+/output.txt
+/CHANGES.md

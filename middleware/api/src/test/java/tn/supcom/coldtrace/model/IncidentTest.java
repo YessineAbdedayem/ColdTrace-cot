@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.Date;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 class IncidentTest {
@@ -39,5 +40,19 @@ class IncidentTest {
         assertEquals(acknowledgedAt, loaded.getAcknowledgedAt());
         assertEquals("Yessine", loaded.getAcknowledgedBy());
         assertEquals("Checked", loaded.getComment());
+    }
+
+    @Test
+    void earlyWarningFieldsAreReadAndOmittedForOtherIncidents() {
+        Incident warning = Incident.fromDocument(new Document("metric", "early_warning")
+                .append("modelVersion", "3").append("horizonMin", 10).append("closeReason", "replaced"));
+        assertEquals("3", warning.getModelVersion());
+        assertEquals(10, warning.getHorizonMin());
+        assertEquals("replaced", warning.getCloseReason());
+
+        Document door = Incident.fromDocument(new Document("metric", "door")).toDocument();
+        assertFalse(door.containsKey("modelVersion"));
+        assertFalse(door.containsKey("horizonMin"));
+        assertFalse(door.containsKey("closeReason"));
     }
 }

@@ -29,6 +29,11 @@ public class Incident {
     private String acknowledgedAt;
     private String acknowledgedBy;
     private String comment;
+    // early_warning incidents only (null for the other metrics)
+    private String modelVersion;
+    private Integer horizonMin;
+    /** Why it closed, when that is not obvious: "calm", "replaced" or "no_forecast" for early warnings. */
+    private String closeReason;
 
     public Incident() {
     }
@@ -65,6 +70,9 @@ public class Incident {
         i.acknowledgedAt = toIso(doc.getDate("acknowledgedAt"));
         i.acknowledgedBy = doc.getString("acknowledgedBy");
         i.comment = doc.getString("comment");
+        i.modelVersion = doc.getString("modelVersion");
+        i.horizonMin = doc.get("horizonMin") instanceof Number n ? n.intValue() : null;
+        i.closeReason = doc.getString("closeReason");
         return i;
     }
 
@@ -89,6 +97,15 @@ public class Incident {
         }
         if (comment != null) {
             doc.put("comment", comment);
+        }
+        if (modelVersion != null) {
+            doc.put("modelVersion", modelVersion);
+        }
+        if (horizonMin != null) {
+            doc.put("horizonMin", horizonMin);
+        }
+        if (closeReason != null) {
+            doc.put("closeReason", closeReason);
         }
         return doc;
     }
@@ -135,4 +152,10 @@ public class Incident {
     public void setAcknowledgedBy(String acknowledgedBy) { this.acknowledgedBy = acknowledgedBy; }
     public String getComment() { return comment; }
     public void setComment(String comment) { this.comment = comment; }
+    public String getModelVersion() { return modelVersion; }
+    public void setModelVersion(String modelVersion) { this.modelVersion = modelVersion; }
+    public Integer getHorizonMin() { return horizonMin; }
+    public void setHorizonMin(Integer horizonMin) { this.horizonMin = horizonMin; }
+    public String getCloseReason() { return closeReason; }
+    public void setCloseReason(String closeReason) { this.closeReason = closeReason; }
 }

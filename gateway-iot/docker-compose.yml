@@ -6,6 +6,7 @@
 #   mongo        : local database for the backend
 #   dev-seed     : registers the simulated sensors in MongoDB, then exits
 #   api          : Jakarta EE backend, built from ../middleware/api
+#   iam          : login server (Jakarta Security, signed tokens), built from ../middleware/iam
 #   front-office : independent monitor, REST and WebSocket proxy to api
 #
 # Before the first start:  cp .env.example .env   and   ./scripts/gen-certs.sh
@@ -140,6 +141,28 @@ services:
       - { type: bind, source: ./certs/ca.crt, target: /certs/ca.crt, read_only: true, bind: { create_host_path: false } }
     restart: unless-stopped
 
+  # Login server (Jakarta Security): users in coldtrace.users, signed tokens with the roles (middleware/iam)
+  iam:
+    build: ../middleware/iam
+    image: coldtrace-iam
+    depends_on:
+      mongo:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${IAM_PORT:-8081}:8080"
+    environment:
+      MONGO_URI: mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongo:27017/${MONGO_DB:-coldtrace}?authSource=${MONGO_DB:-coldtrace}
+      KEYS_DIR: /keys
+      TOKEN_TTL_MINUTES: ${TOKEN_TTL_MINUTES:-480}
+      # first users, created only if missing (see middleware/iam/README.md)
+      IAM_ADMIN_USER: ${IAM_ADMIN_USER:-admin}
+      IAM_ADMIN_PASSWORD: ${IAM_ADMIN_PASSWORD:-}
+      IAM_QUALITY_PASSWORD: ${IAM_QUALITY_PASSWORD:-}
+      IAM_OPERATOR_PASSWORD: ${IAM_OPERATOR_PASSWORD:-}
+    volumes:
+      - iam-keys:/keys          # the token signing keys: kept across restarts, never in git
+    restart: unless-stopped
+
   front-office:
     build: ../frontends/front-office
     image: coldtrace-front-office
@@ -170,3 +193,4 @@ volumes:
   site-data:
   cloud-data:
   mongo-data:
+  iam-keys:

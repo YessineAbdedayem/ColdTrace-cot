@@ -40,16 +40,42 @@ Deux applications clientes sont prévues :
 ├── middleware/
 │   ├── api/                       # Projet Maven existant : ingestion, alertes, REST et WebSocket
 │   ├── core/                      # Réservé ; aucun module Maven pour le moment
-│   ├── iam/                       # Réservé ; aucune authentification implémentée ici
+│   ├── iam/                       # Serveur de connexion (Jakarta Security) : utilisateurs, rôles, jetons signés
 │   └── proxy/                     # Proxy inverse Nginx : coldtrace.test, api.coldtrace.test, mlflow.coldtrace.test
 ├── gateway-iot/                    # Node-RED, brokers MQTT, simulateur et stack Docker Compose
-├── mlops/                         # Pipeline MLOps : données, entraînement, MLflow, API du modèle, CI (voir son README)
+├── mlops/                         # Pipeline MLOps : données, entraînement, MLflow, API du modèle, surveillance, CI
+├── start.ps1, start.cmd           # Démarrage de tout le projet en une commande (Windows)
 └── .github/workflows/mlops.yml     # CI GitHub Actions du pipeline MLOps
 ```
 
+## Démarrage rapide (Windows)
+
+Avec Docker Desktop lancé, depuis la racine du dépôt :
+
+```powershell
+.\start              # plateforme + MLOps ; entraîne le modèle seulement la première fois
+.\start -Retrain     # régénère les données et réentraîne le modèle
+.\start -NoMl        # plateforme seule, sans modèle ni alertes précoces
+.\start -Stop        # arrête tout (les données sont conservées)
+```
+
+Le script peut être relancé à tout moment : chaque étape saute ce qui est déjà fait. Il crée `gateway-iot/.env`, les
+certificats, `mlops/.env` (avec un mot de passe aléatoire) et l'utilisateur MongoDB du pipeline s'ils manquent. Il
+construit et démarre les conteneurs, et n'entraîne le modèle que si MLflow n'a pas encore de modèle `@production`.
+
+| Adresse | Service |
+|---|---|
+| http://localhost:3000 | Moniteur (Front Office) |
+| http://localhost:8080/api/sensors | API REST |
+| http://localhost:8081/auth/login | Serveur de connexion (IAM) : utilisateurs `admin`, `qualite`, `operateur`, mots de passe dans `gateway-iot/.env` (`IAM_*_PASSWORD`) |
+| http://localhost:8001/docs | API du modèle |
+| http://localhost:8001/monitoring | Scores du modèle en direct, dérive et réentraînements |
+
 Le backend reste un seul projet Maven dans `middleware/api/`, avec son moteur d'alertes.
 Le moniteur est servi séparément depuis [frontends/front-office/](frontends/front-office/README.md), sur le port 3000
-par défaut. Le Back Office, `core/` et `iam/` restent réservés et contiennent uniquement un `.gitkeep`.
+par défaut. Le serveur de connexion est dans [middleware/iam/](middleware/iam/README.md) : connexion, rôles (`admin`,
+`quality`, `operator`) et jetons signés. L'API et le moniteur ne demandent pas encore de connexion : c'est l'étape
+suivante. Le Back Office et `core/` restent réservés et contiennent uniquement un `.gitkeep`.
 
 Le Front Office peut être installé depuis un navigateur compatible. Hors ligne, seule l'interface statique reste
 disponible : les valeurs des mesures sont masquées et les actions désactivées. Aucune donnée opérationnelle n'est
@@ -74,6 +100,10 @@ un modèle qui prédit la température maximale des 10 prochaines minutes et **p
 | Entraînement et évaluation | LightGBM, comparé aux règles actuelles et à deux méthodes simples sur 8 jours jamais vus |
 | Suivi et registre | MLflow (http://mlflow.coldtrace.test) : chaque entraînement, ses scores, sa courbe d'apprentissage et son modèle ; `@production` ne passe qu'à un modèle meilleur |
 | Service | API du modèle (http://api.coldtrace.test/ml/docs), rechargée automatiquement quand `@production` change |
+| Intégration | L'API Java interroge le modèle toutes les 30 s et ouvre un incident `early_warning`, en jaune dans le moniteur, avant l'alerte réelle ; il est remplacé par l'alerte réelle quand elle arrive |
+| Surveillance | Chaque prévision est enregistrée puis comparée 10 min plus tard à la réalité : erreur en direct, précision et rappel des alertes, par version du modèle |
+| Dérive | Les entrées en direct sont comparées aux données d'entraînement, variable par variable (PSI) : `ok`, `watch` ou `drift` |
+| Réentraînement automatique | Si l'erreur ou la dérive persistent, ou si le modèle a plus de 7 jours : réentraînement avec les mesures réelles récentes ; le nouveau modèle ne passe en production que s'il est meilleur |
 | Automatisation | Toute la chaîne en une commande (`run.py`) et dans GitHub Actions à chaque push |
 
 **Résultat sur les jours de test :**
@@ -86,15 +116,22 @@ un modèle qui prédit la température maximale des 10 prochaines minutes et **p
 | Fausses alertes par capteur et par jour | 0,35 | 0,44 |
 
 L'explication complète (données, variables, résultats, MLflow, API, CI, limites) est dans [docs/MLOPS.md](docs/MLOPS.md).
-Les commandes sont dans [mlops/README.md](mlops/README.md).
+Les commandes, la surveillance, la dérive et le réentraînement sont dans [mlops/README.md](mlops/README.md). Les règles
+de l'incident `early_warning` sont dans [middleware/api/README.md](middleware/api/README.md).
 
-Lancer le pipeline (avec la stack `gateway-iot` démarrée) :
+`.\start` lance tout cela. À la main (avec la stack `gateway-iot` démarrée) :
 
 ```powershell
 cd mlops
-docker compose up -d mlflow model-api
+docker compose up -d mlflow model-api monitor
 docker compose run --rm --build pipeline run.py --generate
 ```
+
+**Limite connue avec le simulateur.** Le bouton Thaw du simulateur dépasse 4 °C en environ 40 secondes. Le modèle
+travaille sur des minutes complètes, donc l'alerte réelle arrive avant toute alerte précoce. Les vraies pannes de froid
+prennent 5 à 30 minutes : sur une montée réaliste (+0,2 °C/min), l'alerte précoce s'est ouverte à 3,0 °C, environ
+5 minutes avant la limite. Les entrées du simulateur sont aussi bien plus régulières que les données d'entraînement :
+la surveillance signale donc une dérive, ce qui est une vraie observation et pas une erreur.
 
 Les adresses `*.coldtrace.test` demandent d'ajouter ces noms au fichier hosts et de démarrer le proxy :
 voir [middleware/proxy/README.md](middleware/proxy/README.md).

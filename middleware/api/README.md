@@ -126,6 +126,42 @@ Besides temperature and humidity, two more metrics need no profile limits:
 {"event":"incident.opened","incident":{"id":"65f000000000000000000001","siteId":"site01","sensorId":"S02","metric":"temperature","status":"open","value":4.1,"peakValue":4.1,"thresholdMin":0.0,"thresholdMax":4.0,"openedAt":"2026-11-09T12:00:00Z"}}
 ```
 
+### Early warnings from the model
+
+The MLOps model ([docs/MLOPS.md](../../docs/MLOPS.md)) predicts the highest temperature of the next 10 minutes. When
+`ML_FORECAST_URL` is set, the API asks its `GET /forecast/{sensorId}` for every known sensor every `ML_POLL_SECONDS`, and
+raises an `early_warning` incident **before** the temperature limit is crossed:
+
+| Metric | Incident when | Values |
+|---|---|---|
+| `early_warning` | the model answers `warning: true` (predicted maximum above the limit + margin, door closed) | `value` = temperature when it opened, `peakValue` = highest predicted maximum, `thresholdMax` = the limit, plus `modelVersion` and `horizonMin` (also in the REST and WebSocket JSON) |
+
+It closes in one of three ways, saved as `closeReason` (also in the JSON):
+
+| `closeReason` | When |
+|---|---|
+| `calm` | three forecasts in a row without a warning, like the other metrics |
+| `replaced` | the real `temperature` incident opened: the real alert replaces it. It never opens while that incident is open |
+| `no_forecast` | no forecast for 3 minutes (model API down, or the sensor is silent), so it can't stay open for ever |
+
+**No early warning while a unit cools back after its alert.** For 10 minutes after a sensor's `temperature` incident
+closes, the model's input window still holds that heat. While the unit cools back down, it predicts too warm. So no
+early warning opens then, **unless the unit is warming again**: its latest reading is more than 0.3 °C above its lowest
+reading since the alert closed, which means a new failure. The rule uses raw readings, not minute averages, because
+averages lag. Both cases were found in the live test of 16 Nov 2026:
+- a false warning at 2.9 °C while falling from a 6 °C peak;
+- a real warning at 2.8 °C while rising, 9 min 53 s after a recovery, which a plain 10-minute hold blocked.
+
+**Known limit with the simulator.** The simulator's Thaw button crosses 4 °C in about 40 seconds. The model works on
+complete minutes, so the real alert always comes first, and no early warning opens. That is correct: the real alert
+replaces it. Real cooling failures take 5 to 30 minutes. On a realistic slow rise (+0.2 °C/min, published by hand in
+the live test), the early warning opened at 3.0 °C, about 5 minutes before the limit.
+
+- It goes through the same WebSocket events and acknowledgement as the other incidents.
+- **The model is optional.** If the model API is down, unreachable or has no production model, the rule-based alerts
+  are unaffected. The log shows `Early warnings paused: ...` once, then `Early warnings working again`.
+- A sensor with too little recent history (the model API answers 422) is skipped: the `silence` incident covers it.
+
 ## Tests
 
 `mvn test` needs JDK 21 or later. The tests check the API against the example messages in the format document, and
@@ -157,6 +193,8 @@ You don't need Java or Maven on your machine. To build just the WAR locally you 
 | `MQTT_USER` | no | `backend` | Keep `backend`: the cloud broker's ACL names it literally |
 | `MQTT_PASSWORD` | yes | (none) | `CLOUD_BACKEND_PASSWORD` from `gateway-iot/.env` |
 | `MQTT_CA_PATH` | for MQTTS with a private CA | (none) | Path to the CA certificate (PEM) **inside the container** |
+| `ML_FORECAST_URL` | no | (none: early warnings off) | The model API, e.g. `http://model-api:8000`. The Compose stack sets it; put `ML_FORECAST_URL=` (empty) in `gateway-iot/.env` to turn early warnings off |
+| `ML_POLL_SECONDS` | no | `30` | How often each sensor's forecast is requested (at least 5) |
 
 Never put real values in committed files. Put them in an `.env` file (ignored by git) and use `--env-file .env`.
 

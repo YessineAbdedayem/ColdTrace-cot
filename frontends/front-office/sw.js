@@ -3,7 +3,7 @@
 // Bump this version whenever the shell changes. Install a complete offline
 // snapshot; keep an update waiting until the operator chooses to reload.
 const CACHE_PREFIX = "coldtrace-shell-";
-const CACHE_NAME = CACHE_PREFIX + "v5";
+const CACHE_NAME = CACHE_PREFIX + "v6";
 const SHELL = [
   "/", "/index.html", "/monitor.css", "/monitor.js", "/pwa.js",
   "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png",

@@ -5,6 +5,15 @@ backend data, simulator controls and incident acknowledgement. It retains the da
 industrial interface and its three sites/ten sensors. It is served independently
 of the WildFly WAR, with no frontend framework or runtime npm dependency.
 
+**Early warnings** from the MLOps model (`early_warning` incidents, see
+[middleware/api/README.md](../../middleware/api/README.md)) appear in yellow:
+- **the sensor tile** gets a yellow outline, temperature and sparkline, and the flag "EARLY WARNING";
+- **the logbook** gets a dashed yellow row, for example "forecast 6.2 °C within 10 min · limit 4.0 °C · was 3.1 °C · model v1";
+- **the feed** gets a yellow ▲ line, and a ▼ line that says why it closed (forecast back to normal, replaced by the
+  real alert, or no forecast for 3 min).
+
+The real alert keeps its orange style. The shell cache is `coldtrace-shell-v6`.
+
 ## Run
 
 Start Docker Desktop, then from the repository root:
