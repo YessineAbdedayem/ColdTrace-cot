@@ -1,7 +1,8 @@
 """Step 4: train the early-warning model and compare it with the current rule and two baselines.
 
 Reads   $DATA_DIR/train.parquet, test.parquet, faults.parquet   (written by prepare.py)
-Writes  $DATA_DIR/model/model.txt, metrics.json, report/*.png (incl. learning_curve.png), report/faults.csv
+Writes  $DATA_DIR/model/model.txt, model/drift_reference.json, metrics.json, report/*.png (incl. learning_curve.png),
+        report/faults.csv
 
 Methods compared on the test days:
   rule      the current alert engine: a reading above the limit
@@ -24,6 +25,7 @@ import matplotlib
 import numpy as np
 import pandas as pd
 
+import drift
 import tracking
 from evaluate import compare, false_alarms_per_sensor_day
 from features import FEATURES, HORIZON_MIN, TARGET
@@ -46,6 +48,40 @@ PARAMS = {
 # °C relative to the limit: warn when the predicted max of the next 10 min is above limit + margin.
 # A negative margin warns before the prediction itself reaches the limit.
 MARGINS = [-1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0, 1.5]
+
+
+LIVE_SHARE = 0.2      # live rows weigh this share of the fit, when there are live rows
+LIVE_MAX_WEIGHT = 50  # but one live row never counts for more than this many synthetic rows
+
+
+def live_weights(df: pd.DataFrame, share: float = LIVE_SHARE, cap: float = LIVE_MAX_WEIGHT) -> np.ndarray:
+    """Training weight of each row: 1 for synthetic rows; live rows weighted up so they make `share` of the total.
+
+    A few days of live readings are a tiny fraction of the 30-day synthetic history: without weights the model would
+    hardly learn from them. The cap keeps a few hours of live data from dominating.
+    """
+    w = np.ones(len(df))
+    if "source" not in df:
+        return w
+    live = df["source"].eq("live").to_numpy()
+    n_live, n_syn = int(live.sum()), int((~live).sum())
+    if n_live and n_syn and 0 < share < 1:
+        w[live] = min(max(1.0, share * n_syn / ((1 - share) * n_live)), cap)
+    return w
+
+
+def split(train: pd.DataFrame, val_days: float) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Fitting rows and validation rows.
+
+    Validation is the last `val_days` of the synthetic history: the margin is chosen there, against the known
+    faults, which live data does not have. Live rows (prepare.py --live-days) are all used for fitting.
+    """
+    is_live = train["source"].eq("live") if "source" in train else pd.Series(False, index=train.index)
+    synthetic = train[~is_live]
+    cut = synthetic["ts"].max() - timedelta(days=val_days)
+    fit = pd.concat([synthetic[synthetic["ts"] < cut - timedelta(minutes=15)], train[is_live]], ignore_index=True)
+    val = synthetic[synthetic["ts"] >= cut].reset_index(drop=True)
+    return fit, val
 
 
 def baselines(df):
@@ -156,12 +192,15 @@ def main():
     test = pd.read_parquet(data / "test.parquet").reset_index(drop=True)
     faults = pd.read_parquet(data / "faults.parquet")
 
-    cut = train["ts"].max() - timedelta(days=args.val_days)
-    fit, val = train[train["ts"] < cut - timedelta(minutes=15)], train[train["ts"] >= cut].reset_index(drop=True)
-    print(f"Fit {len(fit):,} rows, validation {len(val):,}, test {len(test):,}")
+    fit, val = split(train, args.val_days)
+    weights = live_weights(fit)
+    n_live = int(fit["source"].eq("live").sum()) if "source" in fit else 0
+    live_weight = float(weights.max()) if n_live else 0.0
+    print(f"Fit {len(fit):,} rows ({n_live:,} live" + (f", weight {live_weight:.1f} each" if n_live else "")
+          + f"), validation {len(val):,}, test {len(test):,}")
 
     history = {}
-    train_set = lgb.Dataset(fit[FEATURES], fit[TARGET])
+    train_set = lgb.Dataset(fit[FEATURES], fit[TARGET], weight=weights)
     booster = lgb.train(
         PARAMS,
         train_set,
@@ -214,6 +253,9 @@ def main():
     model_info = {"features": FEATURES, "target": TARGET, "horizon_min": HORIZON_MIN,
                   "margin_c": margins["model"], "best_iteration": booster.best_iteration, "params": PARAMS}
     (model_dir / "model.json").write_text(json.dumps(model_info, indent=2), encoding="utf-8")
+    # what the inputs looked like in training, with the same live weights: the monitor compares the live inputs
+    # with it (drift, step 9b)
+    drift.save(drift.reference(train, FEATURES, weights=live_weights(train)), model_dir / drift.REFERENCE_FILE)
     metrics = {"summary": summary.to_dict(orient="records"), **extra, **model_info}
     (data / "metrics.json").write_text(json.dumps(metrics, indent=2, default=str), encoding="utf-8")
     detail.to_csv(report_dir / "faults.csv", index=False)
@@ -225,7 +267,8 @@ def main():
     if tracking.enabled():
         tracking.log_run(
             booster=booster, history=history, params=PARAMS,
-            cli_args={"val_days": args.val_days, "max_false_per_day": budget, "max_rounds": args.rounds},
+            cli_args={"val_days": args.val_days, "max_false_per_day": budget, "max_rounds": args.rounds,
+                      "rows_fit_live": n_live, "live_weight": live_weight},
             summary=summary, extra=extra, margin=margins["model"], data_dir=data,
             sample_input=test[FEATURES].sample(500, random_state=0), force_promote=args.force_promote,
         )

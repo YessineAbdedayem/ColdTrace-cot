@@ -57,7 +57,9 @@ def log_run(*, booster, history, params, cli_args, summary, extra, margin, data_
     with mlflow.start_run() as run:
         mlflow.log_params({**params, **cli_args, "margin_c": margin, "best_iteration": booster.best_iteration,
                            "n_features": len(prepare["features"]), "rows_train": prepare["rows_train"],
-                           "rows_test": prepare["rows_test"], "test_from": prepare["test_from"][:16]})
+                           "rows_test": prepare["rows_test"], "test_from": prepare["test_from"][:16],
+                           "rows_train_live": prepare.get("rows_train_live", 0),
+                           "live_days": prepare.get("live_days", 0)})
         mlflow.log_metrics(metrics)
 
         # the learning curve, one point per boosting round, so MLflow can draw it
@@ -72,6 +74,10 @@ def log_run(*, booster, history, params, cli_args, summary, extra, margin, data_
         mlflow.log_artifact(str(data_dir / "metrics.json"))
         mlflow.log_artifact(str(data_dir / "prepare.json"))
         mlflow.log_artifact(str(data_dir / "model" / "model.json"), "model_info")
+        # the training distribution of each input, for the monitor's drift check (drift.py)
+        reference = data_dir / "model" / "drift_reference.json"
+        if reference.exists():
+            mlflow.log_artifact(str(reference), "drift")
 
         prediction = booster.predict(sample_input, num_iteration=booster.best_iteration)
         info = mlflow.lightgbm.log_model(
@@ -95,7 +101,9 @@ def log_run(*, booster, history, params, cli_args, summary, extra, margin, data_
         if promote:
             client.set_registered_model_alias(MODEL_NAME, ALIAS, version)
         mlflow.set_tags({"promoted": str(promote).lower(), "promotion_reason": reason,
-                         "previous_production": current_label})
+                         "previous_production": current_label,
+                         # why this training ran: "manual", or the automatic trigger (retrain.py)
+                         "trigger": os.environ.get("RETRAIN_TRIGGER", "manual")})
 
     print(f"\nMLflow run {run.info.run_id[:8]}: registered {MODEL_NAME} version {version}")
     print(f"  {'promoted to @' + ALIAS if promote else 'not promoted'}: {reason}")

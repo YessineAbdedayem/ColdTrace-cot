@@ -8,6 +8,7 @@ so it can run unattended: by hand, on a schedule, or in CI.
   python run.py                              prepare + train + check, on the data already generated
   python run.py --generate --days 30         regenerate the synthetic history first
   python run.py --generate --days 3 --test-days 1 --val-days 0.5    small run (CI)
+  python run.py --live-days 7                also train on the last 7 days of live readings (what retrain.py runs)
 """
 
 import argparse
@@ -58,6 +59,7 @@ def main():
     parser.add_argument("--end", help="end of the generated history (ISO date), for reproducible data")
     parser.add_argument("--test-days", default="8")
     parser.add_argument("--val-days", default="4")
+    parser.add_argument("--live-days", default="0", help="also train on the last N days of live readings")
     parser.add_argument("--force-promote", action="store_true")
     args = parser.parse_args()
 
@@ -67,7 +69,7 @@ def main():
         if args.end:
             gen += ["--end", args.end]
         stage("generate", gen)
-    stage("prepare", ["prepare.py", "--test-days", args.test_days])
+    stage("prepare", ["prepare.py", "--test-days", args.test_days, "--live-days", args.live_days])
     stage("train", ["train.py", "--val-days", args.val_days] + (["--force-promote"] if args.force_promote else []))
     if os.environ.get("MLFLOW_TRACKING_URI"):
         print("\n=== check ===", flush=True)

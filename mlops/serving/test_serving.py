@@ -77,6 +77,37 @@ def test_predict_endpoint():
     assert client.post("/predict", json=body).status_code == 422
 
 
+def test_the_saved_inputs_are_the_model_inputs():
+    from forecast import features_of
+    row = feature_row(readings(minutes=20, rise_per_min=0.1), 4.0, False)
+    saved = features_of(row)
+    assert list(saved) == FEATURES
+    assert saved["temp_rel"] == pytest.approx(row["temp_rel"].iloc[0], abs=1e-4)
+
+
+def test_prediction_document_waits_for_the_monitor():
+    from prediction_log import document
+    result = predict(FollowTrend(), 0.0, readings(rise_per_min=0.3, start_temp=0.5), 4.0, False)
+    doc = document({"_id": "S01", "siteId": "site01"}, {**result, "profile": "cold"}, "7", 10, {"temp_rel": -1.0})
+    assert doc["sensorId"] == "S01" and doc["siteId"] == "site01" and doc["modelVersion"] == "7"
+    assert doc["minute"].tzinfo is not None and doc["predictedMax"] == result["predictedMax"]
+    assert doc["outcome"] is None            # the monitor fills it once the horizon has passed
+
+
+def test_a_broken_prediction_log_never_fails_the_forecast():
+    from prediction_log import PredictionLog
+
+    class Down:
+        def __getitem__(self, name):
+            return self
+
+        def create_index(self, *a, **k):
+            raise ConnectionError("mongo down")
+
+    result = predict(FollowTrend(), 0.0, readings(), 4.0, False)
+    PredictionLog(Down()).save({"_id": "S01"}, result, "7", 10, {})   # must not raise
+
+
 def test_no_model_means_503():
     service.state.model = None
     assert TestClient(service.app).post("/predict", json={"sensorId": "S01", "readings": []}).status_code == 503

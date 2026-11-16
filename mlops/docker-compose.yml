@@ -9,6 +9,7 @@
 # All:       docker compose run --rm --build pipeline run.py    (add --generate to rebuild the data)
 # MLflow:    docker compose up -d mlflow      then http://mlflow.coldtrace.test (via middleware/proxy)
 # Serving:   docker compose up -d --build model-api   then http://api.coldtrace.test/ml/docs
+# Monitor:   docker compose up -d --build monitor     then http://localhost:8001/monitoring
 
 name: coldtrace-mlops
 
@@ -88,8 +89,34 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow:5000
       MONGO_URI: mongodb://${ML_MONGO_USER}:${ML_MONGO_PASSWORD}@mongo:27017/?authSource=admin
       SOURCE_DB: ${SOURCE_DB:-coldtrace}
+      ML_DB: ${ML_DB:-coldtrace_ml}      # each live forecast is saved in coldtrace_ml.predictions
     ports:
       - "127.0.0.1:8001:8000"
+    networks: [coldtrace]
+    restart: unless-stopped
+
+  # Live monitoring: every 5 min, scores the saved forecasts against what really happened, compares the live
+  # inputs with the training data (drift), and writes both to coldtrace_ml.monitoring and to MLflow
+  # (experiment coldtrace-monitoring). Then retrains if the error or drift persist (retrain.py).
+  monitor:
+    build:
+      context: .
+      dockerfile: pipeline/Dockerfile
+    command: ["monitor.py", "--every", "300"]
+    depends_on: [mlflow]
+    environment:
+      MONGO_URI: mongodb://${ML_MONGO_USER}:${ML_MONGO_PASSWORD}@mongo:27017/?authSource=admin
+      ML_DB: ${ML_DB:-coldtrace_ml}
+      SOURCE_DB: ${SOURCE_DB:-coldtrace}
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      DATA_DIR: /data
+      SENSORS_FILE: /sensors/sensors.json
+      # step 9c: retrain on error, drift or age (retrain.py). "false": only log what it would do.
+      AUTO_RETRAIN: ${AUTO_RETRAIN:-true}
+    volumes:
+      # the pipeline's files: the drift fallback reads them, an automatic retraining rewrites them
+      - ./data:/data
+      - ../gateway-iot/simulator/sensors.json:/sensors/sensors.json:ro
     networks: [coldtrace]
     restart: unless-stopped
 

@@ -49,8 +49,16 @@ def feature_row(readings: pd.DataFrame, limit_max: float, is_freezer: bool) -> p
     return row
 
 
+def features_of(row: pd.DataFrame) -> dict:
+    """The model's inputs for this row, as plain floats (saved with each live prediction, for drift checks)."""
+    return {name: round(float(row[name].iloc[0]), 4) for name in FEATURES}
+
+
 def predict(model, margin: float, readings: pd.DataFrame, limit_max: float, is_freezer: bool) -> dict:
-    row = feature_row(readings, limit_max, is_freezer)
+    return predict_row(model, margin, feature_row(readings, limit_max, is_freezer), limit_max)
+
+
+def predict_row(model, margin: float, row: pd.DataFrame, limit_max: float) -> dict:
     predicted_rel = float(model.predict(row[FEATURES])[0])
     door_now = bool(row["door_now"].iloc[0])
     return {

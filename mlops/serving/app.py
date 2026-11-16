@@ -5,7 +5,9 @@ the production alias moved, so promoting a model in MLflow deploys it without a 
 
   GET  /health                 is a model loaded, which version
   POST /predict                forecast from readings sent in the request
-  GET  /forecast/{sensorId}    forecast from the sensor's latest readings in MongoDB
+  GET  /forecast/{sensorId}    forecast from the sensor's latest readings in MongoDB, saved for monitoring
+  GET  /monitoring             the latest live scores and drift computed by the monitor (pipeline/monitor.py),
+                               and the last automatic retrainings (pipeline/retrain.py)
 """
 
 import logging
@@ -20,7 +22,8 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from features import HISTORY_MIN, HORIZON_MIN
-from forecast import NotEnoughData, predict
+from forecast import NotEnoughData, feature_row, features_of, predict, predict_row
+from prediction_log import PredictionLog
 
 MODEL_NAME = os.environ.get("MODEL_NAME", "coldtrace-early-warning")
 ALIAS = os.environ.get("MODEL_ALIAS", "production")
@@ -130,9 +133,10 @@ def predict_from_readings(body: PredictIn):
 
 
 _mongo = None
+_prediction_log = None
 
 
-def platform_db():
+def mongo():
     global _mongo
     if _mongo is None:
         from pymongo import MongoClient
@@ -140,7 +144,24 @@ def platform_db():
         if not uri:
             raise HTTPException(503, "MONGO_URI is not set")
         _mongo = MongoClient(uri, serverSelectionTimeoutMS=3000)
-    return _mongo[os.environ.get("SOURCE_DB", "coldtrace")]
+    return _mongo
+
+
+def platform_db():
+    """The platform's database (read only for this service)."""
+    return mongo()[os.environ.get("SOURCE_DB", "coldtrace")]
+
+
+def ml_db():
+    """The MLOps database: the predictions are saved there."""
+    return mongo()[os.environ.get("ML_DB", "coldtrace_ml")]
+
+
+def prediction_log():
+    global _prediction_log
+    if _prediction_log is None:
+        _prediction_log = PredictionLog(ml_db())
+    return _prediction_log
 
 
 @app.get("/forecast/{sensor_id}")
@@ -166,7 +187,20 @@ def forecast_sensor(sensor_id: str):
     if not docs:
         raise HTTPException(422, f"no readings for {sensor_id} in the last {LOOKBACK_MIN} minutes")
     try:
-        result = predict(model, margin, pd.DataFrame(docs), limit, profile == "freezer")
+        row = feature_row(pd.DataFrame(docs), limit, profile == "freezer")
     except NotEnoughData as e:
         raise HTTPException(422, str(e))
-    return answer(sensor_id, {**result, "profile": profile}, version)
+    result = {**predict_row(model, margin, row, limit), "profile": profile}
+    prediction_log().save(sensor, result, version, HORIZON_MIN, features_of(row))
+    return answer(sensor_id, result, version)
+
+
+@app.get("/monitoring")
+def monitoring():
+    """The latest live scores of each model version, written by the monitor every few minutes."""
+    latest = list(ml_db()["monitoring"].find({}, {"_id": 0}).sort("computedAt", -1).limit(20))
+    by_version = {}
+    for s in latest:  # newest first: keep the first one seen per version
+        by_version.setdefault(s["modelVersion"], s)
+    retraining = list(ml_db()["retraining"].find({}, {"_id": 0, "outputTail": 0}).sort("startedAt", -1).limit(5))
+    return {"production": state.version, "versions": list(by_version.values()), "retraining": retraining}

@@ -14,9 +14,11 @@ out of range. A model will predict the temperature a few minutes ahead and raise
 | 4. Training and evaluation (`pipeline/train.py`, `pipeline/evaluate.py`) | Done |
 | 5. Tracking and model registry with MLflow (`pipeline/tracking.py`, http://mlflow.coldtrace.test) | Done |
 | 6. Serving (`serving/`, http://api.coldtrace.test/ml/docs) | Done |
-| 7. Integration in the API and the monitor | To do |
+| 7. Integration in the API and the monitor (`early_warning` incidents, see `middleware/api/README.md`) | Done, to be checked live |
 | 8. Automated pipeline (`pipeline/run.py`, `.github/workflows/mlops.yml`) | Done |
-| 9. Monitoring and retraining | To do |
+| 9a. Monitoring: live error and warning accuracy (`pipeline/monitor.py`) | Done, to be checked live |
+| 9b. Monitoring: input drift (`pipeline/drift.py`) | Done |
+| 9c. Automatic retraining (`pipeline/retrain.py`, live data in training) | Done, to be checked live |
 
 ## Why synthetic data
 
@@ -185,6 +187,134 @@ evaluation. Unfinished minutes (fewer than 6 readings) are left out. Too little 
 Live check with the simulator: Thaw on S03 at 20:46. The next minute, at **3.15 °C, still under the 4 °C limit**, the
 service already answered `warning: true` with a predicted maximum of 6.2 °C.
 
+## Monitoring: is the model right on live data? (step 9a)
+
+1. **Every live forecast is saved.** Each `GET /forecast/{sensorId}` writes one document to
+   `coldtrace_ml.predictions`, keyed by sensor, minute and model version. It holds the prediction, the warning, and the
+   16 inputs (`features`, kept for the drift check of step 9b). The `/predict` endpoint (CI, manual tests) saves nothing.
+   If saving fails, the forecast is still answered and the log says so once.
+2. **The `monitor` service scores them.** Every 5 minutes, it takes the predictions whose 10-minute horizon has passed
+   (plus 2 minutes for late readings). It reads what really happened in `coldtrace.measurements` and adds:
+   - `actualMax`: the highest temperature of the next 10 minutes, the same definition as the training target;
+   - `error` (`predictedMax - actualMax`) and `crossed` (whether the limit was crossed);
+   - `outcome`: `scored`, or `no_data` when fewer than 5 of those minutes have readings.
+3. **It summarises the last 24 h per model version.** The summary goes to `coldtrace_ml.monitoring` (shown by
+   **`GET /monitoring`**) and to MLflow, in the experiment **`coldtrace-monitoring`**, one run per model version, one
+   point per check. The fields:
+
+| Field | Meaning |
+|---|---|
+| `mae_c` | live forecast error, °C |
+| `training_mae_c` | the same error on the test days of training, from the version's MLflow run |
+| `mae_vs_training` | `mae_c / training_mae_c`: much above 1 means the model does worse live than in training. This is the signal step 9c will use to retrain. |
+| `bias_c` | above 0: predicts too warm (more false warnings); below 0: too cold (late warnings) |
+| `precision` | of the minutes it warned, the share followed by a real crossing |
+| `recall` | of the minutes followed by a crossing, the share it warned |
+| `true_`, `false_warning_minutes`, `missed_minutes` | the counts behind precision and recall |
+
+The warning counts only use minutes where the sensor was still below its limit. Above it, the real alert is already
+open, and a warning has nothing to announce.
+
+```powershell
+docker compose up -d --build model-api monitor
+docker compose logs -f monitor                  # one line per check and model version
+curl.exe http://localhost:8001/monitoring
+docker compose run --rm pipeline monitor.py     # one check by hand
+```
+
+The first scores appear about 15 minutes after the first forecasts: 10 minutes of horizon, plus the settling time,
+plus the next check. On the simulator, the error is only meaningful once some faults happen: click Thaw on a fridge.
+
+## Monitoring: does live data still look like training data? (step 9b)
+
+A model can only be trusted on data like the data it learned from. `pipeline/drift.py` checks that for each of the
+16 inputs:
+
+1. **At training,** `train.py` saves each input's distribution in 10 buckets (training quantiles) to
+   `model/drift_reference.json`, and logs it to MLflow with the model (artifact `drift/`).
+2. **At each check,** the monitor puts the inputs saved with the last 24 h of live predictions into the same buckets,
+   and compares them with the **Population Stability Index** (PSI):
+
+| PSI | `status` | Meaning |
+|---|---|---|
+| < 0.10 | `ok` | the input looks like in training |
+| 0.10 to 0.25 | `watch` | it has moved a little |
+| > 0.25 | `drift` | it has really changed: the model sees data it was not trained on |
+
+Below 200 live rows, the status is `not_enough_data`. In `GET /monitoring`, each version gets `drift_status`, which is
+the worst input, and a `drift` section with:
+- `psi_max`, `top` (the 5 inputs that moved most) and `drifting` (all inputs above 0.25);
+- `features`: the PSI of every input;
+- `reference`: where the training distribution came from.
+
+MLflow gets `live_psi_max` and one `live_psi_<input>` chart per input.
+
+Version 1 was trained before drift references existed. For it, the monitor uses the local training data
+(`mlops/data/train.parquet`, mounted read-only), and `reference` says so. Every version trained from now on carries its
+own reference.
+
+**First result (16 Nov 2026): strong drift against the simulator.** That is a real finding, not a bug. The training
+generator simulates compressor cycles, door openings and changing humidity. The live simulator sends an almost flat
+signal:
+
+| Input | Training, median | Live simulator, median |
+|---|---|---|
+| `std_10` | 0.137 °C | 0.021 °C (about 6 times flatter) |
+| `slope_5`, 10 to 90 % | -0.135 to +0.058 | -0.009 to +0.008 |
+| `humidity`, 10 to 90 % | 55 to 63 % | 59.8 to 60.3 % |
+| `door_s_10`, 90 % | 45 s | 0 s (the door never opens) |
+
+Two fixes are possible: make the simulator more realistic (`SIM_RANDOM_DOOR=true`, more noise), or retrain on live data
+(step 9c). With the real ESP32 sensors, this check shows at once whether the model still fits.
+
+## Automatic retraining (step 9c)
+
+This closes the loop: **serve → monitor → decide → retrain → promote only if better → serve**.
+
+**When.** After each check, the monitor calls `retrain.py`, which retrains when one of these triggers fires for the
+production model:
+
+| Trigger | Condition |
+|---|---|
+| `error` | live error above **1.5×** the training error (`mae_vs_training`) for **6 checks** in a row (30 min), each with at least 200 scored predictions |
+| `drift` | `drift_status` is `drift` for **12 checks** in a row (1 h) |
+| `schedule` | the production model is more than **7 days** old |
+
+At most **one retraining per 24 h**, whatever the trigger, so a trigger that keeps firing can't retrain in a loop.
+
+**How.** It runs the normal pipeline, `run.py --live-days 7`:
+- **The last 7 days of live readings are added to training.** The target (the next 10 minutes' maximum) needs no
+  labels, so the model can learn from real data.
+- **They are weighted** to count for 20 % of the fit, at most 50 synthetic rows each. Without weights, a few days of
+  live data would be lost in the 30-day synthetic history: on 16 Nov, 1,359 live rows against 313,360 synthetic ones
+  (0.4 %).
+- **Validation and test days stay synthetic.** Choosing the margin and scoring early warnings need the known faults
+  that only the generator logs. So every version is judged on the same exam.
+- **The drift reference is built with the same weights,** so it describes what the model really learned from.
+
+**Never deployed blindly.** The usual promotion rule decides: `@production` moves only if the new version catches as
+many failures, with no more false alarms, and warns earlier on average. The model API loads a promoted version within
+a minute.
+
+**Where to see it:**
+- `GET /monitoring` → `retraining`: the last 5 retrainings, each with trigger, reason, `fromVersion`, `newVersion`,
+  `promoted` and status.
+- `docker compose logs -f monitor`: `RETRAINING (drift): ...`, the pipeline's output, then the result.
+- MLflow: every training run has a **`trigger`** tag (`manual`, `error`, `drift` or `schedule`), and the parameters
+  `rows_train_live` and `live_weight`.
+
+```powershell
+docker compose run --rm pipeline retrain.py --dry-run          # what would it decide now?
+docker compose run --rm pipeline retrain.py --force "reason"   # retrain now, with live data
+docker compose run --rm pipeline run.py --live-days 7          # same pipeline, without the retraining record
+```
+
+To turn it off, set `AUTO_RETRAIN=false` in `mlops/.env`. The monitor then only logs what it would do.
+
+**What to expect with the simulator.** Drift is constant, so after 1 h of monitoring the `drift` trigger fires. The new
+version learns from the flat simulator data. It may or may not beat version 1 on the synthetic test days: either way,
+the result is recorded, and production is only replaced by a better model.
+
 ## One command and CI (step 8)
 
 **One command** runs the whole chain. Each stage is its own process, and the pipeline stops at the first failure:
@@ -201,7 +331,7 @@ that touches `mlops/`, and can also be started by hand (**Actions** tab, then **
 
 | Job | What it proves |
 |---|---|
-| Unit tests | the 23 tests of the generator, pipeline and serving pass |
+| Unit tests | the 52 tests of the generator, pipeline and serving pass |
 | Train, register, serve | **the whole pipeline works from scratch:** a fresh MongoDB and MLflow, 3 days of generated data, prepare, train, register, check, then the model API starts and warns for a failing fridge but not for a stable one (`ci/smoke_serving.py`). The metrics and charts are kept as the `mlops-report` artifact of the run. |
 | Docker images | the generator, pipeline and model API images build |
 
@@ -251,7 +381,7 @@ To see MLflow in the browser, add the `mlflow.coldtrace.test` name to the hosts 
 
 The first build takes about 5 minutes (LightGBM, pandas); after that, each step takes seconds.
 
-Tests (7 for the generator, 8 for the pipeline, 8 for serving, run in the containers):
+Tests (7 for the generator, 34 for the pipeline, 11 for serving, run in the containers):
 
 ```powershell
 docker compose run --rm --build --entrypoint pytest generator -q

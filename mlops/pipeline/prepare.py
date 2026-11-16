@@ -2,7 +2,13 @@
 split by time into train and test sets.
 
 Reads   coldtrace_ml.measurements, fault_log, coldtrace.thresholds, the sensors file
+        with --live-days N: also the last N days of coldtrace.measurements (the platform's live readings)
 Writes  $DATA_DIR/train.parquet, test.parquet, faults.parquet, prepare.json
+
+Live readings (step 9c) only go into the training set. The target needs no labels (it is the next minutes'
+maximum), so the model can learn from them; but scoring early warnings needs known faults, which only the synthetic
+history has. So the test days stay synthetic, and every model version is judged on the same kind of test.
+Each row says where it comes from in the `source` column: "synthetic" or "live".
 """
 
 import argparse
@@ -21,9 +27,10 @@ from features import FEATURES, TARGET, add_features, add_target, label_priority,
 DEFAULT_LIMITS = {"cold": 4.0, "freezer": -18.0}
 
 
-def minute_rows(db):
+def minute_rows(db, since=None):
     """One document per sensor per minute, computed in MongoDB to keep memory low."""
-    pipeline = [
+    pipeline = [{"$match": {"ts": {"$gte": since}}}] if since is not None else []
+    pipeline += [
         {"$group": {
             "_id": {"s": "$sensorId", "m": {"$dateTrunc": {"date": "$ts", "unit": "minute"}}},
             "temp": {"$avg": "$temperature"},
@@ -68,13 +75,23 @@ def build(minutes, sensors, limits):
         df["limit_max"] = limit
         df = df[usable(df)].reset_index()
         frames.append(df)
-    return pd.concat(frames, ignore_index=True)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def add_live(train: pd.DataFrame, live: pd.DataFrame) -> pd.DataFrame:
+    """Appends the live rows to the training rows only, marking where each row comes from."""
+    train = train.assign(source="synthetic")
+    if live is None or live.empty:
+        return train
+    return pd.concat([train, live.assign(source="live", label=None)], ignore_index=True)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--test-days", type=float, default=8, help="last N days kept for testing (default 8)")
     parser.add_argument("--sensors", default=os.environ.get("SENSORS_FILE", "/sensors/sensors.json"))
+    parser.add_argument("--live-days", type=float, default=0,
+                        help="also train on the last N days of the platform's live readings (default 0: none)")
     args = parser.parse_args()
 
     uri = os.environ.get("MONGO_URI") or sys.exit("MONGO_URI is not set (see mlops/.env.example)")
@@ -83,7 +100,8 @@ def main():
 
     client = MongoClient(uri)
     ml_db = client[os.environ.get("ML_DB", "coldtrace_ml")]
-    limits = load_limits(client[os.environ.get("SOURCE_DB", "coldtrace")])
+    source_db = client[os.environ.get("SOURCE_DB", "coldtrace")]
+    limits = load_limits(source_db)
     with open(args.sensors, encoding="utf-8") as f:
         sensors = json.load(f)
 
@@ -101,9 +119,23 @@ def main():
     cutoff = data["ts"].max() - timedelta(days=args.test_days)
     # leave one horizon between train and test, so no training target looks into the test period
     train = data[data["ts"] < cutoff - timedelta(minutes=15)]
-    test = data[data["ts"] >= cutoff]
+    test = data[data["ts"] >= cutoff].assign(source="synthetic")
 
-    columns = ["ts", "sensorId", "limit_max", "temp", "temp_max", "label"] + FEATURES + [TARGET]
+    live = pd.DataFrame()
+    if args.live_days > 0:
+        since = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=args.live_days)
+        live_minutes = pd.DataFrame(minute_rows(source_db, since.to_pydatetime()))
+        if live_minutes.empty:
+            print(f"No live readings in the last {args.live_days:g} days: training on synthetic data only")
+        else:
+            live_minutes["ts"] = pd.to_datetime(live_minutes["ts"], utc=True)
+            # live sensors without a known profile are skipped by build()
+            live = build(live_minutes, sensors, limits)
+            live = live[live[TARGET].notna()] if not live.empty else live
+            print(f"Live readings: {len(live):,} usable sensor-minutes from the last {args.live_days:g} days")
+    train = add_live(train, live)
+
+    columns = ["ts", "sensorId", "limit_max", "temp", "temp_max", "label", "source"] + FEATURES + [TARGET]
     train[columns].to_parquet(out / "train.parquet", index=False)
     test[columns].to_parquet(out / "test.parquet", index=False)
 
@@ -114,6 +146,7 @@ def main():
 
     summary = {
         "rows_train": len(train), "rows_test": len(test),
+        "rows_train_live": int((train["source"] == "live").sum()), "live_days": args.live_days,
         "train_from": str(train["ts"].min()), "train_to": str(train["ts"].max()),
         "test_from": str(test["ts"].min()), "test_to": str(test["ts"].max()),
         "features": FEATURES, "target": TARGET, "limits": limits,
