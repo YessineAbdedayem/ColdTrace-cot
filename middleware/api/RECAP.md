@@ -158,7 +158,8 @@ open incident and the WebSocket events without extra code.
 | `MQTT_CA_PATH` | (none) | `/certs/ca.crt` (mounted read-only) |
 
 **Security:** no secret is in the code or in git. Passwords live in `.env` files that git ignores, and the CA
-certificate is mounted read-only. The WebSocket has no login yet.
+certificate is mounted read-only. At the time of this recap, the WebSocket had no login; it has one since 16 Nov (see
+section 11).
 
 ## 7. Timeline
 
@@ -217,9 +218,19 @@ To run the API on its own next to the stack, see `README.md`, section "How to bu
   It should be retried or kept instead.
 - **Sites:** the `sites` collection is still empty. Sensors are registered by the dev seed of the Compose stack.
 - **Single instance:** the fixed MQTT client id means only one API instance can run at a time.
-- **Next task:** REST endpoints for sites, sensors, measurements history and incidents (including acknowledging an
-  incident).
-- **Then:**
-  - the PWA dashboard, using `/ws/alerts` for live alerts;
-  - Jakarta Security for users;
-  - a login on the WebSocket.
+- ~~**Next task:** REST endpoints for sites, sensors, measurements history and incidents (including acknowledging an
+  incident).~~ Done: sensors, incidents (with acknowledgement), gateways. Sites and a measurements history are still
+  to do.
+- ~~**Then:** the PWA dashboard; Jakarta Security for users; a login on the WebSocket.~~ Done, see section 11.
+
+## 11. Since this recap (16 November 2026)
+
+This recap describes the back-end on 9 Nov. Since then, in `middleware/api/` (details in [README.md](README.md)):
+
+| Topic | What changed |
+|---|---|
+| REST | Sensors, incidents, acknowledgement, gateways and the dev fault proxy (Oussema, Yessine) |
+| Front-office | A separate installable PWA (`frontends/front-office`, Yessine) |
+| Early warnings | `EarlyWarningPoller` asks the MLOps model for a forecast every 30 s and opens an `early_warning` incident before the temperature limit is crossed. Rules: closes on calm forecasts, on the real alert, or after 3 min without a forecast; no new warning while a unit cools back after its alert (Khalil) |
+| Login | Jakarta Security: `security/BearerTokenMechanism` checks the login server's tokens (`middleware/iam`). `@RolesAllowed` on every resource. The WebSocket needs `?access_token=`. Acknowledgements are signed by the logged-in user. Only `/api/health` stays public (Khalil) |
+| Tests | 49 unit tests (was 16) |

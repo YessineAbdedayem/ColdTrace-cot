@@ -304,6 +304,7 @@ Each service has its own name instead of `localhost:port`, as in a real deployme
 | http://coldtrace.test | the monitor (front-office) |
 | http://api.coldtrace.test | the REST API, and the model under `/ml/` |
 | http://mlflow.coldtrace.test | MLflow |
+| http://iam.coldtrace.test | the login server (users and roles; the API and the monitor need a login, the model API and MLflow do not yet) |
 
 It has two parts:
 

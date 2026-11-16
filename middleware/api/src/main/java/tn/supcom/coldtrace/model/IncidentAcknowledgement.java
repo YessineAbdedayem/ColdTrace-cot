@@ -1,6 +1,6 @@
 package tn.supcom.coldtrace.model;
 
-/** Normalized, validated demo acknowledgement input. The operator name is not an authenticated identity. */
+/** Normalized, validated acknowledgement. The operator is the logged-in user (IncidentResource takes it from the token). */
 public record IncidentAcknowledgement(String operator, String comment) {
 
     public static IncidentAcknowledgement validate(Object operator, Object comment) {

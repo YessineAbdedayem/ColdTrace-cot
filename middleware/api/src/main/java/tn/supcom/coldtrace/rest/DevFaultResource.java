@@ -1,5 +1,6 @@
 package tn.supcom.coldtrace.rest;
 
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.json.bind.Jsonb;
 import jakarta.json.bind.JsonbBuilder;
@@ -10,6 +11,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import tn.supcom.coldtrace.security.Access;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -31,6 +33,7 @@ import java.util.regex.Pattern;
  */
 @Path("/dev/faults")
 @ApplicationScoped
+@RolesAllowed({Access.ADMIN, Access.OPERATOR})   // operating the equipment: not the quality manager
 public class DevFaultResource {
 
     private static final Logger LOG = Logger.getLogger(DevFaultResource.class.getName());

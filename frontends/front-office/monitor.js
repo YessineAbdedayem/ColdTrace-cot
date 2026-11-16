@@ -34,21 +34,38 @@ const pendingSensors = new Set();
 const pendingAcks = new Set();
 let clearPending = false;
 
-const canOperate = () => navigator.onLine && connection.api;
+// ---------- login (middleware/iam) ----------
+// The session lives in sessionStorage: it ends when the tab closes. The token itself is checked by the API.
+const SESSION_KEY = "coldtrace.session";
+const auth = loadSession();
+let expiryTimer = null;
+
+function loadSession() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null");
+    if (s && s.token && s.user && Date.parse(s.expiresAt) > Date.now() + 5000) return s;
+  } catch (e) { /* unreadable: start signed out */ }
+  sessionStorage.removeItem(SESSION_KEY);
+  return { token: null, user: null, expiresAt: null };
+}
+const hasRole = (...roles) => Boolean(auth.user?.roles?.some(r => roles.includes(r)));
+// the simulator's fault buttons: operating the equipment (the API enforces the same rule)
+const canFault = () => hasRole("admin", "operator");
+
+const canOperate = () => navigator.onLine && connection.api && Boolean(auth.token);
 
 function updateControls() {
   for (const [id, t] of tiles) {
-    t.buttons.forEach(b => { b.disabled = !canOperate() || faultsEnabled !== true || clearPending || pendingSensors.has(id); });
+    t.buttons.forEach(b => { b.disabled = !canOperate() || !canFault() || faultsEnabled !== true || clearPending || pendingSensors.has(id); });
   }
   for (const [id, row] of incidentRows) {
     const disabled = !canOperate() || pendingAcks.has(id);
     row.ackButton.disabled = disabled;
     row.submit.disabled = disabled;
-    row.operator.disabled = disabled;
     row.comment.disabled = disabled;
     row.cancel.disabled = pendingAcks.has(id);
   }
-  $("#clear-faults").disabled = !canOperate() || faultsEnabled !== true || clearPending || pendingSensors.size > 0;
+  $("#clear-faults").disabled = !canOperate() || !canFault() || faultsEnabled !== true || clearPending || pendingSensors.size > 0;
   document.body.dataset.busy = String(clearPending || pendingSensors.size > 0 || pendingAcks.size > 0);
 }
 
@@ -58,7 +75,8 @@ function updateConnection() {
   const status = $("#connection-status");
   const offlineGateways = knownGateways.filter(g => g.status !== "online");
   let message;
-  if (!navigator.onLine) message = "Browser offline. Live monitoring unavailable. Readings are hidden and operational controls are disabled.";
+  if (!auth.token) message = "Signed out. Sign in to see live data.";
+  else if (!navigator.onLine) message = "Browser offline. Live monitoring unavailable. Readings are hidden and operational controls are disabled.";
   else if (!connection.api) message = "Backend unavailable. Live monitoring unavailable. Readings are hidden and operational controls are disabled; retrying.";
   else if (!connection.ws) message = "Alert link disconnected. Measurements refresh every 5 s; live incident alerts are unavailable. Reconnecting.";
   else if (offlineGateways.length) message = "Gateway disconnected: " + offlineGateways.map(g => g.gatewayId || g.siteId).join(", ") + ". Check sensor ages; the latest readings may be old.";
@@ -111,9 +129,17 @@ async function getJson(url, options) {
   requests.add(controller);
   const timer = setTimeout(() => controller.abort(), 8000);
   try {
-    const r = await fetch(url, { ...options, cache: "no-store", signal: controller.signal });
+    const headers = { ...(options?.headers || {}), ...(auth.token ? { Authorization: "Bearer " + auth.token } : {}) };
+    const r = await fetch(url, { ...options, headers, cache: "no-store", signal: controller.signal });
     let data;
     try { data = await r.json(); } catch (e) { data = null; }
+    if (r.status === 401) {
+      // expired, revoked, or signed by an old key: the user must sign in again
+      signOut("Your session has ended. Sign in again.");
+      const err = new Error("Signed out.");
+      err.status = 401;
+      throw err;
+    }
     if (!r.ok) {
       const message = data && typeof data.error === "string" ? data.error : url + " returned " + r.status;
       const err = new Error(message);
@@ -356,14 +382,10 @@ function createIncidentRow(incident) {
   const form = document.createElement("form");
   form.className = "ack-form";
   form.hidden = true;
-  const operatorLabel = document.createElement("label");
-  operatorLabel.append(document.createTextNode("Nom de l’opérateur (démo)"));
-  const operator = document.createElement("input");
-  operator.type = "text";
-  operator.maxLength = 64;
-  operator.required = true;
-  operator.autocomplete = "name";
-  operatorLabel.append(operator);
+  // the API signs the acknowledgement with the logged-in user: nothing to type
+  const signer = document.createElement("p");
+  signer.className = "ack-signer";
+  signer.textContent = `Signé par ${auth.user?.name || auth.user?.username || "vous"} (${auth.user?.username || "?"})`;
   const commentLabel = document.createElement("label");
   commentLabel.append(document.createTextNode("Commentaire (facultatif)"));
   const comment = document.createElement("textarea");
@@ -383,15 +405,15 @@ function createIncidentRow(incident) {
   cancel.type = "button";
   cancel.textContent = "Annuler";
   controls.append(submit, cancel);
-  form.append(operatorLabel, commentLabel, error, controls);
+  form.append(signer, commentLabel, error, controls);
 
-  const row = { el, who, what, when, detail, state, acknowledgement, action, ackButton, form, operator, comment, error, submit, cancel };
+  const row = { el, who, what, when, detail, state, acknowledgement, action, ackButton, form, comment, error, submit, cancel };
 
   ackButton.addEventListener("click", () => {
     if (!canOperate()) return;
     form.hidden = false;
     ackButton.hidden = true;
-    operator.focus();
+    comment.focus();
   });
   cancel.addEventListener("click", () => {
     form.hidden = true;
@@ -443,13 +465,12 @@ async function acknowledgeIncident(id, row) {
   row.error.textContent = "";
   row.submit.disabled = true;
   row.cancel.disabled = true;
-  row.operator.disabled = true;
   row.comment.disabled = true;
   try {
     const incident = await getJson(`/api/incidents/${encodeURIComponent(id)}/ack`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ operator: row.operator.value, comment: row.comment.value })
+      body: JSON.stringify({ comment: row.comment.value })
     });
     openIncidents = openIncidents.map(item => item.id === incident.id ? incident : item);
     updateIncidentRow(row, incident);
@@ -527,8 +548,10 @@ function stopAlerts() {
 }
 
 function connectAlerts() {
-  if (!navigator.onLine || alertSocket || reconnectTimer) return;
-  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws/alerts");
+  if (!navigator.onLine || !auth.token || alertSocket || reconnectTimer) return;
+  // browsers can't send an Authorization header on a WebSocket: the token goes in the query
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host
+    + "/ws/alerts?access_token=" + encodeURIComponent(auth.token));
   alertSocket = ws;
   ws.onopen = () => {
     if (alertSocket !== ws) return;
@@ -566,6 +589,12 @@ function connectAlerts() {
 // ---------- simulator faults (through the API's dev proxy) ----------
 
 async function loadFaults() {
+  if (!canFault()) {
+    faultsEnabled = false;
+    hint("Fault buttons are for operators and administrators.");
+    updateControls();
+    return;
+  }
   try {
     const data = await getJson("/api/dev/faults");
     const list = Array.isArray(data) ? data : data.sensors || [];
@@ -649,7 +678,7 @@ function renderGateways(list) {
 let polling = false;
 let refreshRequested = false;
 async function poll() {
-  if (!navigator.onLine) return;
+  if (!navigator.onLine || !auth.token) return;
   if (polling) { refreshRequested = true; return; }
   polling = true;
   const epoch = connectionEpoch;
@@ -712,7 +741,99 @@ document.addEventListener("visibilitychange", () => {
   connectAlerts();
   poll();
 });
+// ---------- sign in / sign out ----------
+
+function showLogin(message) {
+  $("#login").hidden = false;
+  $("#user-chip").hidden = true;
+  $("#logout").hidden = true;
+  const error = $("#login-error");
+  error.textContent = message || "";
+  error.hidden = !message;
+  $("#login-user").focus();
+}
+
+function startSession() {
+  $("#login").hidden = true;
+  $("#user-name").textContent = `${auth.user.name || auth.user.username} · ${(auth.user.roles || []).join(", ")}`;
+  $("#user-chip").hidden = false;
+  $("#user-chip").classList.add("ok");
+  $("#logout").hidden = false;
+  $("#ack-note").textContent = `Acknowledgements are signed as ${auth.user.username}.`;
+  clearTimeout(expiryTimer);
+  // setTimeout's limit is about 24 days; tokens last hours
+  const left = Math.min(Date.parse(auth.expiresAt) - Date.now(), 2 ** 31 - 1);
+  expiryTimer = setTimeout(() => signOut("Your session has expired. Sign in again."), Math.max(0, left));
+  historyNeedsRefresh = true;
+  updateConnection();
+  connectAlerts();
+  poll();
+}
+
+function signOut(message) {
+  if (!auth.token && !$("#login").hidden) return;   // already signed out
+  sessionStorage.removeItem(SESSION_KEY);
+  auth.token = auth.user = auth.expiresAt = null;
+  clearTimeout(expiryTimer);
+  connectionEpoch++;
+  requests.forEach(request => request.abort());
+  stopAlerts();
+  // forget everything the previous user saw
+  connection.api = false;
+  connection.lastSuccess = null;
+  firstRender = true;
+  tiles.clear();
+  incidentRows.clear();
+  openIncidents = [];
+  knownGateways = [];
+  const placeholder = document.createElement("p");
+  placeholder.className = "loading";
+  placeholder.textContent = "Sign in to see the sensors.";
+  $("#sites").replaceChildren(placeholder);
+  $("#open-incidents").textContent = "";
+  $("#feed").textContent = "";
+  $("#gateways").textContent = "";
+  hint("");
+  updateConnection();
+  showLogin(message);
+}
+
+$("#login-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const submit = $("#login-submit");
+  const error = $("#login-error");
+  submit.disabled = true;
+  error.hidden = true;
+  try {
+    if (!navigator.onLine) throw new Error("You are offline: signing in needs the network.");
+    const r = await fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: $("#login-user").value.trim().toLowerCase(), password: $("#login-password").value }),
+      cache: "no-store"
+    });
+    let data = null;
+    try { data = await r.json(); } catch (e) { /* not JSON */ }
+    if (!r.ok) {
+      throw new Error(data && typeof data.error === "string" ? data.error
+        : r.status >= 500 ? "The login server is not reachable. Try again in a moment." : `Sign-in failed (${r.status}).`);
+    }
+    auth.token = data.accessToken;
+    auth.user = data.user;
+    auth.expiresAt = data.expiresAt;
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(auth));
+    $("#login-password").value = "";
+    startSession();
+  } catch (e) {
+    error.textContent = e.name === "TypeError" ? "The login server is not reachable. Try again in a moment." : e.message;
+    error.hidden = false;
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+$("#logout").addEventListener("click", () => signOut("Signed out."));
+
 updateConnection();
-connectAlerts();
-poll();
+if (auth.token) startSession(); else showLogin();
 setInterval(poll, POLL_MS);

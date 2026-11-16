@@ -6,6 +6,7 @@ import com.mongodb.client.model.FindOneAndUpdateOptions;
 import com.mongodb.client.model.ReturnDocument;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.Updates;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.json.Json;
@@ -21,8 +22,10 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.SecurityContext;
 import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
@@ -30,6 +33,7 @@ import tn.supcom.coldtrace.alert.AlertBroadcaster;
 import tn.supcom.coldtrace.alert.AlertEvent;
 import tn.supcom.coldtrace.model.Incident;
 import tn.supcom.coldtrace.model.IncidentAcknowledgement;
+import tn.supcom.coldtrace.security.Access;
 
 import java.io.StringReader;
 import java.util.ArrayList;
@@ -38,9 +42,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** GET /api/incidents?status=open|closed&limit=50 : newest first. Without status, both. */
+/**
+ * GET /api/incidents?status=open|closed&limit=50 : newest first. Without status, both.
+ * POST /api/incidents/{id}/ack {comment?}: acknowledged by the logged-in user (from the token, not from the body).
+ */
 @Path("/incidents")
 @RequestScoped
+@RolesAllowed({Access.ADMIN, Access.QUALITY, Access.OPERATOR})
 public class IncidentResource {
 
     private static final int MAX_LIMIT = 200;
@@ -51,6 +59,9 @@ public class IncidentResource {
 
     @Inject
     AlertBroadcaster broadcaster;
+
+    @Context
+    SecurityContext security;
 
     @GET
     @Produces(MediaType.APPLICATION_JSON)
@@ -86,10 +97,12 @@ public class IncidentResource {
             return error(Response.Status.BAD_REQUEST, "request body must be a JSON object");
         }
         if (!ACK_FIELDS.containsAll(request.keySet())) {
-            return error(Response.Status.BAD_REQUEST, "only operator and comment are allowed");
+            return error(Response.Status.BAD_REQUEST, "only comment is allowed");
         }
 
-        Object operator = requestValue(request, "operator");
+        // The operator is the logged-in user, from the token. An "operator" field in the body (older clients) is
+        // accepted but ignored: nobody can acknowledge in someone else's name.
+        Object operator = security.getUserPrincipal() == null ? null : security.getUserPrincipal().getName();
         Object comment = requestValue(request, "comment");
 
         IncidentAcknowledgement input;

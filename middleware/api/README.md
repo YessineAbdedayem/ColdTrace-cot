@@ -29,26 +29,55 @@ src/main/webapp/
 
 ## REST endpoints
 
-| Method and path | Returns |
-|---|---|
-| `GET /api/health` | `{"status":"ok"}` |
-| `GET /api/sensors` | every sensor with its profile limits, latest reading and last 24 temperatures (oldest first) |
-| `GET /api/incidents?status=open\|closed&limit=50` | incidents, newest first (`limit` up to 200; no `status` = both) |
-| `POST /api/incidents/{id}/ack` | acknowledges an open incident with `{"operator":"Yessine","comment":"Door checked"}` |
-| `GET /api/gateways` | latest status and counters of each site's gateway |
-| `GET /api/dev/faults` | **dev only**: the simulator's sensors and their active fault |
-| `POST /api/dev/faults` | **dev only**: `{"sensorId":"S01","fault":"door_open"}` (or `siteId`); faults: `door_open`, `temp_rise`, `silent`, `none` |
-| `POST /api/dev/faults/clear` | **dev only**: clears every fault |
+| Method and path | Roles | Returns |
+|---|---|---|
+| `GET /api/health` | **public** | `{"status":"ok"}` |
+| `GET /api/sensors` | all | every sensor with its profile limits, latest reading and last 24 temperatures (oldest first) |
+| `GET /api/incidents?status=open\|closed&limit=50` | all | incidents, newest first (`limit` up to 200; no `status` = both) |
+| `POST /api/incidents/{id}/ack` | all | acknowledges an open incident in the caller's name: `{"comment":"Door checked"}` |
+| `GET /api/gateways` | all | latest status and counters of each site's gateway |
+| `GET /api/dev/faults` | `admin`, `operator` | **dev only**: the simulator's sensors and their active fault |
+| `POST /api/dev/faults` | `admin`, `operator` | **dev only**: `{"sensorId":"S01","fault":"door_open"}` (or `siteId`); faults: `door_open`, `temp_rise`, `silent`, `none` |
+| `POST /api/dev/faults/clear` | `admin`, `operator` | **dev only**: clears every fault |
+| `ws://…/ws/alerts?access_token=…` | all | live alert events (see "Alerts") |
 
-The read endpoints have no login yet: that comes with Jakarta Security.
+"All" means the three roles: `admin`, `quality`, `operator`.
 
-Acknowledgement input requires an `operator` name (trimmed, 1–64 characters).
-`comment` is optional (trimmed, at most 500 characters). The endpoint returns
-the updated incident with `acknowledgedAt`, `acknowledgedBy` and `comment`;
-invalid input or an invalid ObjectId returns `400`, an unknown incident returns
-`404`, and an already acknowledged or closed incident returns `409`.
-Acknowledgement does not close an incident or alter its automatic recovery
-rules. The typed operator name is a **demo value, not an authenticated identity**.
+## Login
+
+Every endpoint except `/api/health` needs a token from the login server
+([middleware/iam](../iam/README.md)): `Authorization: Bearer <token>`. For the WebSocket, it goes in
+`?access_token=<token>`, because browsers can't send that header on a WebSocket.
+- **How the token is checked:** `security/BearerTokenMechanism.java` is a Jakarta Security
+  `HttpAuthenticationMechanism`. It checks the token's RS256 signature with the IAM's public key, fetched once from
+  `{IAM_URL}/auth/public-key` and refreshed every 10 min, then its expiry, issuer and audience. Then it logs the caller
+  in with the token's roles, and `@RolesAllowed` on the resources does the rest.
+- **When it's refused:**
+  - no token, or an invalid or expired one: **401**;
+  - a valid token without the role: **403**;
+  - IAM never reached since the API started: **503**.
+
+  The API keeps its key while the IAM is down, so tokens it signed keep working.
+- **The WebSocket:** an upgrade without a valid token is refused. A session that still arrives without a user is closed
+  (code 1008).
+- **The code:** `security/Jwt.java` is a copy of the IAM's verifier, and `security/Access.java` holds the public paths
+  and where the token is. Both are unit tested.
+
+```powershell
+$pw = (Select-String -Path gateway-iot\.env -Pattern '^IAM_OPERATOR_PASSWORD=').Line.Split('=', 2)[1]
+$t = (Invoke-RestMethod -Method Post http://127.0.0.1:8081/auth/login -ContentType application/json `
+  -Body (@{ username = 'operateur'; password = $pw } | ConvertTo-Json)).accessToken
+Invoke-RestMethod http://127.0.0.1:8080/api/sensors -Headers @{ Authorization = "Bearer $t" }
+```
+
+**Acknowledgement:**
+- **Who signs:** the logged-in user. `acknowledgedBy` is the token's username, so nobody can acknowledge in someone
+  else's name. An `operator` field in the body, from older clients, is accepted but ignored.
+- **The comment** is optional (trimmed, at most 500 characters).
+- **The answer:** the updated incident, with `acknowledgedAt`, `acknowledgedBy` and `comment`.
+- **Errors:** invalid input or an invalid ObjectId gives `400`, an unknown incident `404`, and an incident already
+  acknowledged or closed `409`.
+- **What it doesn't do:** acknowledgement doesn't close an incident or change its automatic recovery rules.
 
 The `/api/dev/faults` endpoints forward to the simulator's control API. The browser cannot call the simulator itself:
 it is another origin and has no CORS. They are **off (404) unless `SIM_CONTROL_URL` is set**. The Compose stack sets it
@@ -118,9 +147,9 @@ Besides temperature and humidity, two more metrics need no profile limits:
 - One reading outside the limits opens an incident in `coldtrace.incidents`, one per sensor and metric.
 - Three consecutive in-range readings close it. A new breach during those readings keeps it open.
 - A `silence` incident closes as soon as the sensor sends a reading again.
-- Connected clients of `ws://<host>:8080/ws/alerts` receive JSON when an incident opens, is acknowledged
-  (`incident.acknowledged`) or closes. The acknowledgement event contains the updated incident. The endpoint has no
-  login yet.
+- Connected clients of `ws://<host>:8080/ws/alerts?access_token=<token>` receive JSON when an incident opens, is
+  acknowledged (`incident.acknowledged`) or closes. The acknowledgement event contains the updated incident. A token
+  is required (see "Login").
 
 ```json
 {"event":"incident.opened","incident":{"id":"65f000000000000000000001","siteId":"site01","sensorId":"S02","metric":"temperature","status":"open","value":4.1,"peakValue":4.1,"thresholdMin":0.0,"thresholdMax":4.0,"openedAt":"2026-11-09T12:00:00Z"}}
@@ -193,6 +222,7 @@ You don't need Java or Maven on your machine. To build just the WAR locally you 
 | `MQTT_USER` | no | `backend` | Keep `backend`: the cloud broker's ACL names it literally |
 | `MQTT_PASSWORD` | yes | (none) | `CLOUD_BACKEND_PASSWORD` from `gateway-iot/.env` |
 | `MQTT_CA_PATH` | for MQTTS with a private CA | (none) | Path to the CA certificate (PEM) **inside the container** |
+| `IAM_URL` | **yes** | (none) | The login server, e.g. `http://iam:8080` (set by the Compose stack). Without it, every endpoint except `/api/health` answers 503 |
 | `ML_FORECAST_URL` | no | (none: early warnings off) | The model API, e.g. `http://model-api:8000`. The Compose stack sets it; put `ML_FORECAST_URL=` (empty) in `gateway-iot/.env` to turn early warnings off |
 | `ML_POLL_SECONDS` | no | `30` | How often each sensor's forecast is requested (at least 5) |
 

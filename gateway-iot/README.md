@@ -21,11 +21,11 @@ see [MESSAGE-FORMAT.md](../docs/MESSAGE-FORMAT.md).
 
 | Path | What |
 |---|---|
-| `docker-compose.yml` | site broker, cloud broker, Node-RED, simulator, MongoDB, API, independent Front Office, and a one-shot job that registers the simulated sensors |
+| `docker-compose.yml` | site broker, cloud broker, Node-RED, simulator, MongoDB, login server (IAM), API, independent Front Office, and a one-shot job that registers the simulated sensors |
 | `.env.example` | settings and passwords (copy to `.env`) |
 | `scripts/gen-certs.sh` | creates the dev CA and the cloud broker's TLS certificate |
-| `scripts/run-all.sh` | prepares `.env` and certificates, starts everything, runs the smoke test |
-| `scripts/smoke-test.sh` | end-to-end checks, including alerts and a cloud outage |
+| `scripts/run-all.sh` | prepares `.env` (including random login passwords) and certificates, starts everything, runs the smoke test |
+| `scripts/smoke-test.sh` | end-to-end checks, including alerts (with a login) and a cloud outage |
 | `mosquitto/site/` | site broker config |
 | `mosquitto/cloud/` | cloud broker config (TLS only, login, access rules in `acl`) |
 | `mongo/init-app-user.sh` | creates the backend database user, collections and indexes |
@@ -60,11 +60,21 @@ cp .env.example .env            # then change the example passwords in .env
 docker compose up -d --build
 ```
 
+On Windows, `.\start` from the repository root does all of this and the MLOps part (see the root README).
+
 If the certificates are missing, `docker compose up` stops with an error
 instead of starting a broken stack. The API is on http://localhost:8080
 (change it with `API_PORT` in `.env`). The **Front Office is at http://localhost:3000/**
 (`FRONT_OFFICE_PORT`, default 3000), served by Nginx from `frontends/front-office/`.
-It forwards REST and WebSocket requests to the API; see the [Front Office README](../frontends/front-office/README.md).
+It forwards REST and WebSocket requests to the API, and `/auth/` to the login server; see the
+[Front Office README](../frontends/front-office/README.md).
+
+**Login.** The API, its alert WebSocket and the Front Office require a login since the IAM step 2. The login server
+(`iam`, http://localhost:8081, [middleware/iam](../middleware/iam/README.md)) creates the users `admin`, `qualite` and
+`operateur` from `IAM_ADMIN_PASSWORD`, `IAM_QUALITY_PASSWORD` and `IAM_OPERATOR_PASSWORD` in `.env`.
+- The `change-me` examples are refused, so `run-all.sh` and `start.ps1` replace them with random values.
+- If you edit `.env` by hand, choose at least 10 characters.
+- Only `/api/health` stays public.
 
 MongoDB's init script creates the `coldtrace` database and its app user,
 collections and indexes when the data volume is empty. Init scripts run only
@@ -125,13 +135,15 @@ Run the end-to-end local checks from `gateway-iot/` after the stack is up:
 ./scripts/smoke-test.sh
 ```
 
-The smoke test takes about four minutes. It checks that the services are
-running, that telemetry and gateway status reach MongoDB through the API, and
-that duplicates and bad messages are handled. It also warms sensor S02 to
-confirm a WebSocket alert in under 10 seconds and the incident closing, and it
-stops the cloud broker briefly to confirm replay. While it runs, any simulator
-faults you set are cleared. Simulator model tests run with
-`cd simulator && npm test`.
+The smoke test takes about four minutes. It checks:
+- that the eight services are running (with `iam`);
+- that telemetry and gateway status reach MongoDB through the API;
+- that duplicates and bad messages are handled;
+- a WebSocket alert in under 10 seconds, then the incident closing, by warming sensor S02. For this, `alert-e2e.js`
+  logs in as `operateur`, or as the admin when `IAM_OPERATOR_PASSWORD` is empty, with the passwords from `.env`;
+- replay, by stopping the cloud broker briefly.
+
+While it runs, any simulator faults you set are cleared. Simulator model tests run with `cd simulator && npm test`.
 
 ## Test a cloud outage
 
@@ -214,6 +226,9 @@ docker compose up -d
 - Passwords live in `.env`, certificates and keys in `certs/`: both are ignored by git.
 - Node-RED only gets `ca.crt` (to check the broker), never a private key.
 - Ports are opened on `127.0.0.1` only.
+- Users log in through the IAM (Jakarta Security, signed tokens with roles). The API and the alert WebSocket refuse
+  requests without a valid token, except `/api/health`. The token signing keys live in the `iam-keys` volume, never in
+  git.
 
 Still to do (later steps): a login on the Node-RED editor (`adminAuth` in
 `settings.js`), client certificates for the gateway (mutual TLS), and TLS
@@ -248,4 +263,5 @@ or at least a password on the site broker once real ESP32s are on the network.
 - **MongoDB collections**: `measurements` is a regular collection with a
   unique `msgId` index and `{siteId: 1, sensorId: 1, ts: -1}` index; empty
   collections are also created for `incidents`, `sites`, `sensors`,
-  `thresholds` and `users`.
+  `thresholds` and `users`. The login server stores its accounts in `users`
+  (`_id` = username, password hashed with PBKDF2).

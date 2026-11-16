@@ -27,9 +27,27 @@
       <span class="chip" id="chip-api"><i aria-hidden="true"></i>API connecting</span>
       <span class="chip" id="chip-ws"><i aria-hidden="true"></i>Alerts connecting</span>
       <span id="gateways"></span>
+      <span class="chip user-chip" id="user-chip" hidden><i aria-hidden="true"></i><span id="user-name"></span></span>
+      <button type="button" class="btn-logout" id="logout" hidden>Log out</button>
       <time class="clock" id="clock">--:--:--</time>
     </div>
   </header>
+
+  <div class="login-screen" id="login" hidden>
+    <form class="login-card" id="login-form" autocomplete="on">
+      <span class="brand-mark" aria-hidden="true">❄</span>
+      <h2 class="stencil">ColdTrace</h2>
+      <p class="login-sub">Sign in to monitor the cold chain.</p>
+      <label>Username
+        <input type="text" id="login-user" name="username" autocomplete="username" maxlength="32" required>
+      </label>
+      <label>Password
+        <input type="password" id="login-password" name="password" autocomplete="current-password" maxlength="128" required>
+      </label>
+      <p class="login-error" id="login-error" role="alert" hidden></p>
+      <button type="submit" id="login-submit">Sign in</button>
+    </form>
+  </div>
 
   <div class="connection-panel">
     <p id="connection-status" role="status" aria-live="polite" aria-atomic="true">Connecting to backend. Live monitoring is not available yet.</p>
@@ -57,7 +75,7 @@
       <p class="log-state" id="log-state">Waiting for live incidents.</p>
 
       <h3 class="log-title">Open now</h3>
-      <p class="demo-note">Demo: the operator name is not authenticated.</p>
+      <p class="demo-note" id="ack-note">Acknowledgements are signed with your account.</p>
       <ol class="incidents" id="open-incidents"></ol>
       <p class="empty" id="open-empty">All clear. Nothing out of range.</p>
 

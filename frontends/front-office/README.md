@@ -12,7 +12,22 @@ of the WildFly WAR, with no frontend framework or runtime npm dependency.
 - **the feed** gets a yellow ▲ line, and a ▼ line that says why it closed (forecast back to normal, replaced by the
   real alert, or no forecast for 3 min).
 
-The real alert keeps its orange style. The shell cache is `coldtrace-shell-v6`.
+The real alert keeps its orange style.
+
+**Login.** The monitor opens on a sign-in screen. The accounts come from the login server
+([middleware/iam](../../middleware/iam/README.md)): `admin`, `qualite`, `operateur`, with passwords in
+`gateway-iot/.env` (`IAM_*_PASSWORD`).
+- **Where login goes:** Nginx forwards `/auth/` to the IAM, so login stays on the page's origin and needs no CORS.
+- **The token** is sent as `Authorization: Bearer` on every `/api/` call, and as `?access_token=` on the alert WebSocket.
+  Nginx doesn't write that WebSocket line to its access log.
+- **The session** lives in `sessionStorage`: closing the tab, the token's expiry (8 h), any 401 from the API, or
+  **Log out** returns to the sign-in screen, and clears the sensors and incidents from the page.
+- **The header** shows the user's name and roles.
+- **Acknowledgements** are signed by the logged-in account: there is no name to type any more.
+- **The fault buttons** (Door, Thaw, Mute, Reset, Clear all) only work for `admin` and `operator`; the API enforces
+  the same rule.
+
+The shell cache is `coldtrace-shell-v7`. `/auth/` is never cached.
 
 ## Run
 
@@ -63,11 +78,13 @@ the dashboard is included in the WAR, and no fixed-port redirect is added to the
 
 ## Verify the dashboard
 
+- The sign-in screen appears first; after signing in (for example as `operateur`), the header shows the account.
 - All three sites and ten sensor cards appear; temperature, humidity, age and curves refresh every 5 seconds.
 - API, Alert link and gateway indicators become green. The logbook loads recent stored events.
 - Door opens the selected simulated door and creates a door incident. Thaw simulates a cooling failure: the temperature rises until it exceeds the profile limit.
 - Mute stops readings; a silence incident appears after more than 60 seconds, checked every 15 seconds.
-- Acquitter records an operator and comment on an open incident without closing it.
+- Acquitter records the logged-in user and an optional comment on an open incident, without closing it.
+- Signed in as `qualite`, the fault buttons stay disabled (operators and administrators only).
 - Reset restores the selected sensor; normal readings close incidents according to existing recovery rules.
 - During a temporary network interruption, the alert indicator goes offline and reconnects when the connection returns.
 
@@ -187,4 +204,4 @@ only that sensor's previous fault, without deleting the incident. With the optio
 unset, tests do not submit simulator controls. Screenshots/results are written to
 ignored `test-results/`. `FRONT_OFFICE_URL` overrides the test URL when required.
 
-Back Office, IAM and push notifications remain outside this task.
+The Back Office and push notifications remain outside this task. The login (IAM) is done: see "Login" above.

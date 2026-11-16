@@ -2,6 +2,7 @@ package tn.supcom.coldtrace.rest;
 
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Sorts;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
@@ -9,6 +10,7 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import org.bson.Document;
+import tn.supcom.coldtrace.security.Access;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -17,6 +19,7 @@ import java.util.List;
 /** GET /api/gateways: the latest status of each site's gateway (collection "gateways", _id = siteId). */
 @Path("/gateways")
 @RequestScoped
+@RolesAllowed({Access.ADMIN, Access.QUALITY, Access.OPERATOR})
 public class GatewayResource {
 
     @Inject

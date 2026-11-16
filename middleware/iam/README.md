@@ -10,19 +10,23 @@ browser ──POST /auth/login──> iam ── checks the password (coldtrace.
 browser ──Authorization: Bearer <token>──> api, iam ── check the signature with the public key, then @RolesAllowed
 ```
 
-**Status.** Step 1 is done: the IAM runs on its own, with login, tokens and user management. Step 2 will protect the
-API and the alert WebSocket with these tokens, and add a login screen to the front-office. Until then, the API and the
-monitor work as before, without a login.
+**Status.**
+- **Step 1, done:** login, tokens, user management.
+- **Step 2, done:** the API and the alert WebSocket require these tokens (`@RolesAllowed`, see
+  [middleware/api/README.md](../api/README.md), "Login"). The monitor has a sign-in screen, and acknowledgements are
+  signed by the logged-in user.
+- **Not covered yet:** the model API (`mlops`) and MLflow. They are only reachable from the Docker network and
+  127.0.0.1.
 
 ## Roles
 
 These are the three profiles of the specification:
 
-| Role | Who | Can (once step 2 protects the API) |
+| Role | Who | Can |
 |---|---|---|
-| `admin` | administrator | everything, including users (back-office) |
-| `quality` | quality manager | alerts, history, acknowledgement, reports |
-| `operator` | driver or operator | alerts and acknowledgement |
+| `admin` | administrator | everything: sensors, incidents, acknowledgement, simulator faults, users (IAM) |
+| `quality` | quality manager | sensors, incidents, gateways, acknowledgement (not the simulator faults) |
+| `operator` | driver or operator | sensors, incidents, gateways, acknowledgement, simulator faults |
 
 ## Endpoints
 

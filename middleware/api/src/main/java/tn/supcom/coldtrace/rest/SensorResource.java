@@ -3,6 +3,7 @@ package tn.supcom.coldtrace.rest;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Sorts;
+import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.RequestScoped;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
@@ -13,6 +14,7 @@ import org.bson.Document;
 import tn.supcom.coldtrace.model.Measurement;
 import tn.supcom.coldtrace.model.Sensor;
 import tn.supcom.coldtrace.model.Threshold;
+import tn.supcom.coldtrace.security.Access;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,6 +28,7 @@ import java.util.Map;
  */
 @Path("/sensors")
 @RequestScoped
+@RolesAllowed({Access.ADMIN, Access.QUALITY, Access.OPERATOR})
 public class SensorResource {
 
     /** Number of recent readings returned per sensor (2 minutes at one reading every 5 s). */

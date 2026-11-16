@@ -428,3 +428,40 @@ html { scroll-padding-top: 110px; }
   .log-head { flex-wrap: wrap; }
   .connection-panel, .update-panel { align-items: flex-start; }
 }
+
+/* ---------- sign in (middleware/iam) ---------- */
+.login-screen {
+  position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 16px;
+  background: rgba(6, 13, 16, 0.92); backdrop-filter: blur(3px);
+}
+.login-screen[hidden] { display: none; }
+.login-card {
+  display: grid; gap: 12px; width: min(360px, 100%); padding: 28px 24px;
+  background: var(--steel-850); border: 1px solid var(--hairline); border-top: 3px solid var(--frost);
+  border-radius: var(--radius); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+.login-card .brand-mark { font-size: 28px; color: var(--frost); }
+.login-card h2 { margin: 0; font-size: 34px; color: var(--ice); }
+.login-sub { margin: 0 0 6px; font: 400 12px var(--f-mono); color: var(--mist); }
+.login-card label { display: grid; gap: 5px; font: 400 11px var(--f-mono); color: var(--mist); text-transform: uppercase;
+  letter-spacing: 0.1em; }
+.login-card input {
+  width: 100%; min-height: 44px; padding: 9px 10px; color: var(--ice); background: var(--steel-950);
+  border: 1px solid var(--hairline); border-radius: 2px; font: 400 14px var(--f-mono);
+}
+.login-card input:focus { outline: 1px solid var(--frost); }
+.login-card button {
+  min-height: 44px; margin-top: 4px; font: 700 15px var(--f-ui); text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--steel-950); background: var(--frost); border: 1px solid var(--frost); border-radius: 2px; cursor: pointer;
+}
+.login-card button:disabled { opacity: 0.5; cursor: wait; }
+.login-error { margin: 0; color: var(--hazard); font: 400 12px/1.45 var(--f-mono); }
+.login-error[hidden] { display: none; }
+
+.user-chip[hidden], .btn-logout[hidden] { display: none; }
+.btn-logout {
+  min-height: 32px; padding: 4px 10px; font: 600 12px var(--f-ui); text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--mist); background: transparent; border: 1px solid var(--hairline); border-radius: var(--radius); cursor: pointer;
+}
+.btn-logout:hover, .btn-logout:focus-visible { color: var(--ice); border-color: var(--frost); }
+.ack-signer { margin: 0; font: 400 11px var(--f-mono); color: var(--frost); }

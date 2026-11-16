@@ -65,7 +65,7 @@ construit et démarre les conteneurs, et n'entraîne le modèle que si MLflow n'
 
 | Adresse | Service |
 |---|---|
-| http://localhost:3000 | Moniteur (Front Office) |
+| http://localhost:3000 | Moniteur (Front Office) : se connecter avec `admin`, `qualite` ou `operateur` |
 | http://localhost:8080/api/sensors | API REST |
 | http://localhost:8081/auth/login | Serveur de connexion (IAM) : utilisateurs `admin`, `qualite`, `operateur`, mots de passe dans `gateway-iot/.env` (`IAM_*_PASSWORD`) |
 | http://localhost:8001/docs | API du modèle |
@@ -74,8 +74,9 @@ construit et démarre les conteneurs, et n'entraîne le modèle que si MLflow n'
 Le backend reste un seul projet Maven dans `middleware/api/`, avec son moteur d'alertes.
 Le moniteur est servi séparément depuis [frontends/front-office/](frontends/front-office/README.md), sur le port 3000
 par défaut. Le serveur de connexion est dans [middleware/iam/](middleware/iam/README.md) : connexion, rôles (`admin`,
-`quality`, `operator`) et jetons signés. L'API et le moniteur ne demandent pas encore de connexion : c'est l'étape
-suivante. Le Back Office et `core/` restent réservés et contiennent uniquement un `.gitkeep`.
+`quality`, `operator`) et jetons signés. **L'API, le WebSocket d'alertes et le moniteur demandent une connexion** :
+le moniteur affiche un écran de connexion, et chaque acquittement est signé par le compte connecté. Seul
+`/api/health` reste public. Le Back Office et `core/` restent réservés et contiennent uniquement un `.gitkeep`.
 
 Le Front Office peut être installé depuis un navigateur compatible. Hors ligne, seule l'interface statique reste
 disponible : les valeurs des mesures sont masquées et les actions désactivées. Aucune donnée opérationnelle n'est
@@ -170,12 +171,16 @@ cp .env.example .env          # puis remplacer chaque mot de passe "change-me"
 ./scripts/gen-certs.sh        # CA de développement + certificat du cloud-broker
 ```
 
+Les mots de passe de connexion (`IAM_ADMIN_PASSWORD`, `IAM_QUALITY_PASSWORD`, `IAM_OPERATOR_PASSWORD`) doivent avoir au
+moins 10 caractères. Les exemples `change-me` sont refusés par le serveur de connexion. `run-all.sh` et `.\start` les
+remplacent par des valeurs aléatoires.
+
 Si le port 8080 est déjà pris sur la machine (par exemple par Oracle), mettre `API_PORT=18080` dans `.env` et utiliser
 ce port dans les tests ci-dessous.
 
 ```bash
-docker compose up -d --build  # 7 services + dev-seed (enregistre les capteurs puis s'arrête)
-docker compose ps             # site-broker, cloud-broker, node-red, simulator, mongo, api, front-office : tous "Up"
+docker compose up -d --build  # 8 services + dev-seed (enregistre les capteurs puis s'arrête)
+docker compose ps             # site-broker, cloud-broker, node-red, simulator, mongo, iam, api, front-office : tous "Up"
 ./scripts/smoke-test.sh       # tests automatiques de bout en bout : chaque ligne doit afficher PASS
 ```
 
@@ -188,8 +193,12 @@ exemple pour une démonstration.
 
 Ouvrir **http://localhost:3000/** (ou le port de `FRONT_OFFICE_PORT`). Le Front Office remplace la plupart des commandes
 de cette section. L'API conserve son port (`API_PORT`, 18080 sur le PC de développement) ; son ancien chemin `/monitor/`
-n'héberge plus le tableau de bord. Nginx sert les fichiers et transmet `/api/` et `/ws/alerts` à l'API :
+n'héberge plus le tableau de bord. Nginx sert les fichiers, transmet `/api/` et `/ws/alerts` à l'API et `/auth/` au
+serveur de connexion :
 
+- **Connexion :** la page s'ouvre sur un écran de connexion (`admin`, `qualite` ou `operateur`, mots de passe dans
+  `gateway-iot/.env`). L'en-tête affiche le compte et ses rôles, avec **Log out**. Les boutons de pannes sont réservés
+  aux rôles `admin` et `operator`.
 - **Capteurs :** chaque capteur est affiché avec sa température, son humidité, sa porte, l'âge de sa dernière mesure
   et une courbe des 2 dernières minutes. L'affichage se rafraîchit toutes les 5 s.
 - **Pannes :** les boutons **Door / Thaw / Mute / Reset** de chaque capteur (Thaw = panne de froid, la température monte) déclenchent les pannes des tests 5 à 8, et
@@ -273,19 +282,22 @@ Invoke-RestMethod -Method Post -Uri 'http://localhost:4000/faults' -ContentType 
 
 ### 5 bis. Acquitter un incident ouvert
 
-Récupérer l'identifiant de l'incident `door` de S01 dans
-`GET /api/incidents?status=open`, puis remplacer `<id>` dans la commande :
+L'API demande une connexion (voir [middleware/iam](middleware/iam/README.md)). Se connecter d'abord, avec un mot de
+passe de `gateway-iot/.env`, puis récupérer l'identifiant de l'incident `door` de S01 dans
+`GET /api/incidents?status=open` et remplacer `<id>` dans la commande :
 
 ```bash
-curl -X POST http://localhost:8080/api/incidents/<id>/ack \
-  -H 'Content-Type: application/json' \
-  -d '{"operator":"Yessine","comment":"Vérification de la porte en cours"}'
+TOKEN=$(curl -s http://localhost:8081/auth/login -H 'Content-Type: application/json' \
+  -d "{\"username\":\"operateur\",\"password\":\"$(grep ^IAM_OPERATOR_PASSWORD= .env | cut -d= -f2-)\"}" \
+  | sed 's/.*"accessToken":"\([^"]*\)".*/\1/')
+curl -H "Authorization: Bearer $TOKEN" 'http://localhost:8080/api/incidents?status=open'
+curl -X POST http://localhost:8080/api/incidents/<id>/ack -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' -d '{"comment":"Vérification de la porte en cours"}'
 ```
 
-**Attendu :** l'incident reste `status: "open"` et contient `acknowledgedAt`,
-`acknowledgedBy: "Yessine"` et le commentaire. Il se fermera automatiquement
-quand le capteur reviendra à la normale. Le nom saisi est une valeur de
-démonstration : il n'est pas authentifié.
+**Attendu :** l'incident reste `status: "open"` et contient `acknowledgedAt`, `acknowledgedBy: "operateur"` (le compte
+connecté, jamais un nom saisi) et le commentaire. Il se fermera automatiquement quand le capteur reviendra à la
+normale. Le plus simple reste le bouton **Acquitter** du moniteur, une fois connecté.
 
 ### 6. Le congélateur se réchauffe → incident `temperature`
 
@@ -321,11 +333,13 @@ curl -X POST http://localhost:4000/faults/clear
 ### 9. Alertes en temps réel par WebSocket
 
 ```bash
-docker compose exec simulator node alert-e2e.js
+docker compose exec -e IAM_USERNAME=operateur -e IAM_PASSWORD="$(grep ^IAM_OPERATOR_PASSWORD= .env | cut -d= -f2-)" \
+  simulator node alert-e2e.js
 ```
 
-Le script se connecte à `ws://api:8080/ws/alerts`. Il réchauffe S02 et attend l'alerte, puis il annule la panne et
-attend la fermeture.
+Le script se connecte d'abord au serveur de connexion, car le WebSocket demande un jeton. Il ouvre ensuite
+`ws://api:8080/ws/alerts?access_token=...`, réchauffe S02 et attend l'alerte, puis il annule la panne et attend la
+fermeture.
 
 **Attendu :** `Alert for S02 at 4.x C, ... ms after the reading`, puis `Incident closed at ...`.
 
