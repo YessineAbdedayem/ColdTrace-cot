@@ -3,6 +3,16 @@
 "use strict";
 
 const POLL_MS = 5000;
+
+// Where the API and the login server are. WildFly serves ColdTrace with one virtual host per name
+// (middleware/wildfly): this page on www.<domain> (or <domain>), the API on api.<domain>, the login server on
+// iam.<domain>, with the same scheme and port as the page. CORS on WildFly allows these cross-origin calls.
+const SITE = location.hostname.replace(/^www\./, "");
+const NAMED = SITE !== "localhost" && SITE.includes(".") && !/^[\d.]+$/.test(SITE) && !SITE.includes(":");
+const PORT = location.port ? ":" + location.port : "";
+const API_ORIGIN = NAMED ? `${location.protocol}//api.${SITE}${PORT}` : "";
+const IAM_ORIGIN = NAMED ? `${location.protocol}//iam.${SITE}${PORT}` : "";
+const WS_ORIGIN = (location.protocol === "https:" ? "wss://" : "ws://") + (NAMED ? `api.${SITE}${PORT}` : location.host);
 const SILENT_AFTER_S = 60;
 const METRIC_LABEL = {
   temperature: "Temperature", humidity: "Humidity", door: "Door open", silence: "No signal",
@@ -130,7 +140,7 @@ async function getJson(url, options) {
   const timer = setTimeout(() => controller.abort(), 8000);
   try {
     const headers = { ...(options?.headers || {}), ...(auth.token ? { Authorization: "Bearer " + auth.token } : {}) };
-    const r = await fetch(url, { ...options, headers, cache: "no-store", signal: controller.signal });
+    const r = await fetch(API_ORIGIN + url, { ...options, headers, cache: "no-store", signal: controller.signal });
     let data;
     try { data = await r.json(); } catch (e) { data = null; }
     if (r.status === 401) {
@@ -550,8 +560,7 @@ function stopAlerts() {
 function connectAlerts() {
   if (!navigator.onLine || !auth.token || alertSocket || reconnectTimer) return;
   // browsers can't send an Authorization header on a WebSocket: the token goes in the query
-  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host
-    + "/ws/alerts?access_token=" + encodeURIComponent(auth.token));
+  const ws = new WebSocket(WS_ORIGIN + "/ws/alerts?access_token=" + encodeURIComponent(auth.token));
   alertSocket = ws;
   ws.onopen = () => {
     if (alertSocket !== ws) return;
@@ -806,7 +815,7 @@ $("#login-form").addEventListener("submit", async event => {
   error.hidden = true;
   try {
     if (!navigator.onLine) throw new Error("You are offline: signing in needs the network.");
-    const r = await fetch("/auth/login", {
+    const r = await fetch(IAM_ORIGIN + "/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username: $("#login-user").value.trim().toLowerCase(), password: $("#login-password").value }),

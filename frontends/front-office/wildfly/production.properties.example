@@ -1,8 +1,0 @@
-# Copy and adapt to your private deployment network. TLS must terminate at a trusted ingress.
-# Use --properties=<your-file> with default-host.cli before starting this dedicated frontend server.
-default.path=/opt/jboss/frontend
-default.aliases=frontend.example.org
-api.host=api
-api.port=8080
-iam.host=iam
-iam.port=8080

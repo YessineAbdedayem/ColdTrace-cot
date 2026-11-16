@@ -63,14 +63,25 @@ docker compose up -d --build
 On Windows, `.\start` from the repository root does all of this and the MLOps part (see the root README).
 
 If the certificates are missing, `docker compose up` stops with an error
-instead of starting a broken stack. The API is on http://localhost:8080
-(change it with `API_PORT` in `.env`). The **Front Office is at http://localhost:3000/**
-(`FRONT_OFFICE_PORT`, default 3000), served by WildFly/Undertow from `frontends/front-office/`.
-It forwards REST and WebSocket requests to the API, and `/auth/` to the login server; see the
-[Front Office README](../frontends/front-office/README.md).
+instead of starting a broken stack.
+
+**One WildFly** (`wildfly` service, [middleware/wildfly](../middleware/wildfly/README.md)) serves the front-office,
+the back-office, the API and the login server, one virtual host per name, over HTTPS:
+
+| Address | Service |
+|---|---|
+| https://coldtrace.test, https://www.coldtrace.test | Front Office (monitor) |
+| https://api.coldtrace.test | REST API and alert WebSocket |
+| https://iam.coldtrace.test | login server |
+| https://admin.coldtrace.test | back-office |
+
+It needs these names in the hosts file, the HTTPS certificate (`WEB_TLS_PASSWORD` in `.env`,
+`middleware/wildfly/gen-web-cert.sh`), and the development CA trusted by the PC. `.\start` does all three. Ports 80
+(redirects to HTTPS) and 443 of this PC are used. The other containers reach the WildFly on its internal port, with
+the full names, e.g. `http://api.coldtrace.test:8080`.
 
 **Login.** The API, its alert WebSocket and the Front Office require a login since the IAM step 2. The login server
-(`iam`, http://localhost:8081, [middleware/iam](../middleware/iam/README.md)) creates the users `admin`, `qualite` and
+(https://iam.coldtrace.test, [middleware/iam](../middleware/iam/README.md)) creates the users `admin`, `qualite` and
 `operateur` from `IAM_ADMIN_PASSWORD`, `IAM_QUALITY_PASSWORD` and `IAM_OPERATOR_PASSWORD` in `.env`.
 - The `change-me` examples are refused, so `run-all.sh` and `start.ps1` replace them with random values.
 - If you edit `.env` by hand, choose at least 10 characters.

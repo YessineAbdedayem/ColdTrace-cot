@@ -18,7 +18,9 @@ $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
 $Gateway = Join-Path $Root "gateway-iot"
 $Mlops = Join-Path $Root "mlops"
-$Proxy = Join-Path $Root "middleware\proxy"
+$Wildfly = Join-Path $Root "middleware\wildfly"
+# The names of the WildFly virtual hosts (middleware/wildfly); they must point to this PC in the hosts file.
+$HostNames = @("coldtrace.test", "www.coldtrace.test", "api.coldtrace.test", "iam.coldtrace.test", "admin.coldtrace.test", "mlflow.coldtrace.test")
 
 function Step($text) { Write-Host ""; Write-Host "==> $text" -ForegroundColor Cyan }
 function Info($text) { Write-Host "    $text" }
@@ -123,7 +125,6 @@ if (-not $dockerOk) { Fail "Docker is not running. Start Docker Desktop, wait un
 if ($Stop) {
     Step "Stopping ColdTrace (data is kept)"
     if (Test-Path (Join-Path $Mlops ".env")) { Compose $Mlops @("down") }
-    Compose $Proxy @("down")
     Compose $Gateway @("down")
     Write-Host ""; Write-Host "Stopped." -ForegroundColor Green
     exit 0
@@ -162,6 +163,42 @@ if ($missingCert) {
     Info "certificates found"
 }
 
+# HTTPS certificate of the WildFly (*.coldtrace.test), signed by the development CA above.
+$newTls = Set-SecretIfMissing $gatewayEnv "WEB_TLS_PASSWORD"
+if ($newTls -or -not (Test-Path (Join-Path $certs "web.p12"))) {
+    $bash = "C:\Program Files\Gitinash.exe"
+    if (-not (Test-Path $bash)) { Fail "The HTTPS certificate is missing and Git Bash was not found to create it. Install Git for Windows, or run middleware/wildfly/gen-web-cert.sh yourself." }
+    Info "Creating the HTTPS certificate for *.coldtrace.test..."
+    $env:WEB_TLS_PASSWORD = ((Get-Content $gatewayEnv) -match '^WEB_TLS_PASSWORD=' | Select-Object -First 1).Substring(17).Trim()
+    & $bash (Join-Path $Wildfly "gen-web-cert.sh")
+    Remove-Item Env:\WEB_TLS_PASSWORD
+    if ($LASTEXITCODE -ne 0) { Fail "Could not create the HTTPS certificate (middleware/wildfly/gen-web-cert.sh)." }
+} else {
+    Info "HTTPS certificate found"
+}
+
+# The browser must trust the development CA, or it refuses https://*.coldtrace.test.
+# Current user's store: no administrator rights needed; Windows asks for a confirmation the first time.
+$ca = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 (Join-Path $certs "ca.crt")
+if (-not (Get-ChildItem Cert:\CurrentUser\Root | Where-Object { $_.Thumbprint -eq $ca.Thumbprint })) {
+    Warn "Trusting the ColdTrace development CA for this Windows user: confirm with 'Yes' in the window that opens."
+    Import-Certificate -FilePath (Join-Path $certs "ca.crt") -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+    Info "Development CA trusted (restart the browser if it was open)"
+} else {
+    Info "development CA already trusted"
+}
+
+# The names of the virtual hosts must point to this PC.
+$hostsFile = "$env:WINDIR\System32\drivers\etc\hosts"
+$hostsText = if (Test-Path $hostsFile) { Get-Content $hostsFile -Raw } else { "" }
+$missingNames = $HostNames | Where-Object { $hostsText -notmatch "(?m)^\s*127\.0\.0\.1\s+(.*\s)?$([regex]::Escape($_))(\s|#|$)" }
+if ($missingNames) {
+    Warn "These names are not in the hosts file yet: $($missingNames -join ', ')"
+    Warn "In PowerShell as administrator, run:"
+    Warn "  Add-Content -Path $hostsFile -Encoding ASCII -Value ""``n127.0.0.1   $($missingNames -join ' ')"""
+    Warn "  ipconfig /flushdns"
+}
+
 Step "2/4  Platform: build and start (the first time takes a few minutes)"
 Compose $Gateway @("up", "-d", "--build")
 
@@ -176,15 +213,6 @@ for ($i = 0; $i -lt 60; $i++) {
 }
 if (-not $healthy) { Fail "MongoDB did not become ready in 2 minutes. See: cd gateway-iot; docker compose logs mongo" }
 Info "MongoDB ready"
-
-# --- 2. Reverse proxy (only useful when the *.coldtrace.test names are in the hosts file) -------------------------
-
-$hostsFile = "$env:WINDIR\System32\drivers\etc\hosts"
-$hasNames = (Test-Path $hostsFile) -and (Select-String -Path $hostsFile -Pattern "coldtrace\.test" -Quiet)
-if ($hasNames) {
-    Step "Reverse proxy (coldtrace.test names)"
-    Compose $Proxy @("up", "-d", "--build")
-}
 
 # --- 3. MLOps -----------------------------------------------------------------------------------------------------
 
@@ -234,23 +262,24 @@ if (-not $NoMl) {
 Write-Host ""
 Write-Host "ColdTrace is running." -ForegroundColor Green
 Write-Host ""
-Write-Host "  Monitor (Undertow)      http://localhost:3000   (or FRONT_OFFICE_PORT from gateway-iot/.env)"
-Write-Host "  REST API               http://localhost:8080/api/sensors"
-Write-Host "  Login server (IAM)     http://localhost:8081/auth/login   (users admin, qualite, operateur:"
-Write-Host "                         passwords in gateway-iot/.env, IAM_*_PASSWORD)"
+Write-Host "  All served by ONE WildFly, one virtual host per name (middleware/wildfly):"
+Write-Host "  Front-office (monitor)  https://coldtrace.test        (or https://www.coldtrace.test)"
+Write-Host "  Back-office             https://admin.coldtrace.test"
+Write-Host "  REST API                https://api.coldtrace.test/api/health"
+Write-Host "  Login server (IAM)      https://iam.coldtrace.test   (users admin, qualite, operateur:"
+Write-Host "                          passwords in gateway-iot/.env, IAM_*_PASSWORD)"
 if (-not $NoMl) {
     $model = Get-ModelHealth
     $state = if ($model -and $model.status -eq "ok") { "model version $($model.modelVersion)" } else { "still loading" }
-    Write-Host "  Model API              http://localhost:8001/docs   ($state)"
-    Write-Host "  Live model scores      http://localhost:8001/monitoring   (first scores about 15 min after start)"
+    Write-Host "  Model API               https://api.coldtrace.test/ml/docs   ($state)"
+    Write-Host "  Live model scores       https://api.coldtrace.test/ml/monitoring   (first scores about 15 min after start)"
+    Write-Host "  MLflow                  https://mlflow.coldtrace.test"
 }
-if ($hasNames) {
+if ($missingNames) {
     Write-Host ""
-    Write-Host "  Also: http://coldtrace.test   http://api.coldtrace.test/ml/docs   http://mlflow.coldtrace.test"
-} elseif (-not $NoMl) {
-    Write-Host "  MLflow                 only through the proxy: see middleware/proxy/README.md (hosts file)"
+    Write-Host "  The addresses above need these names in the hosts file first: $($missingNames -join ', ')" -ForegroundColor Yellow
 }
 Write-Host ""
 Write-Host "  Try it: click Thaw on a fridge in the monitor. An early_warning incident opens before the temperature one."
-Write-Host "  API log: cd gateway-iot; docker compose logs -f api"
+Write-Host "  WildFly log: cd gateway-iot; docker compose logs -f wildfly"
 Write-Host "  Stop:    .\start -Stop"

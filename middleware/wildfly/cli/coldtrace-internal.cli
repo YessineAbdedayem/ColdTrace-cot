@@ -1,0 +1,9 @@
+# ColdTrace: an internal HTTP port for the other containers (API -> IAM public key, tests), on the Docker network only.
+# The course scripts redirect port 80 to https and only 80/443 are published to the PC; this port 8080 is not
+# published, and is neither redirected nor given HSTS (the filters only match ports 80 and 443).
+# Clients use the full names (http://iam.coldtrace.test:8080), so each request still reaches the right virtual host.
+set internalPort=`:resolve-expression(expression=${internal.port})`
+batch
+/socket-binding-group=standard-sockets/socket-binding=internal-http:add(port=$internalPort)
+/subsystem=undertow/server=default-server/http-listener=internal:add(socket-binding=internal-http)
+run-batch

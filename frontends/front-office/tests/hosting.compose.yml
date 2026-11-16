@@ -66,46 +66,38 @@ services:
       SIM_BAD_RATE: "0"
       SIM_RANDOM_DOOR: "false"
       SIM_CONTROL_PORT: "4000"
-  iam:
-    image: coldtrace-iam
-    build: ../../../middleware/iam
+  # The ColdTrace WildFly (middleware/wildfly), as in production: one server, one virtual host per name, HTTPS only.
+  # Published on HOSTING_HTTPS_PORT (13443) so it can run next to a normal stack; the tests use
+  # https://www.coldtrace.test:13443, https://api.coldtrace.test:13443 and https://iam.coldtrace.test:13443.
+  wildfly:
+    image: coldtrace-wildfly
+    build:
+      context: ../../..
+      dockerfile: middleware/wildfly/Dockerfile
     depends_on:
       seed: {condition: service_completed_successfully}
-    tmpfs: ["/keys:uid=1000,gid=1000"]
-    environment:
-      MONGO_URI: mongodb://mongo/coldtrace
-      KEYS_DIR: /keys
-      IAM_ADMIN_PASSWORD: Integration-only-123!
-      IAM_QUALITY_PASSWORD: Integration-only-123!
-      IAM_OPERATOR_PASSWORD: Integration-only-123!
-  api:
-    image: coldtrace-api
-    build: ../../../middleware/api
-    depends_on:
-      seed: {condition: service_completed_successfully}
-      iam: {condition: service_started}
       cloud-broker: {condition: service_started}
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    ports: ["127.0.0.1:${HOSTING_HTTPS_PORT:-13443}:443"]
+    tmpfs: ["/keys:uid=1000,gid=1000"]
     volumes:
       - ${HOSTING_CERTS_DIR:-../../../gateway-iot/certs}/ca.crt:/certs/ca.crt:ro
+      - ${HOSTING_CERTS_DIR:-../../../gateway-iot/certs}/web.p12:/certs/web.p12:ro
     environment:
       MONGO_URI: mongodb://mongo/coldtrace
+      WEB_TLS_PASSWORD: ${HOSTING_TLS_PASSWORD:?set HOSTING_TLS_PASSWORD, the password of web.p12}
       MQTT_URL: ssl://cloud-broker:8883
       MQTT_USER: backend
       MQTT_PASSWORD: integration-only-pass
       MQTT_CA_PATH: /certs/ca.crt
-      IAM_URL: http://iam:8080
+      IAM_URL: http://iam.coldtrace.test:8080
       SIM_CONTROL_URL: http://simulator:4000
       ML_FORECAST_URL: ""
-  front-office:
-    image: coldtrace-front-office-undertow
-    build:
-      context: ..
-      dockerfile: Dockerfile.wildfly
-    depends_on: [api, iam]
-    ports: ["127.0.0.1:${HOSTING_TEST_PORT:-13002}:8080"]
-  proxy:
-    image: coldtrace-proxy-wildfly
-    build: ../../../middleware/proxy
-    profiles: [proxy]
-    depends_on: [front-office]
-    ports: ["127.0.0.1:${HOSTING_PROXY_TEST_PORT:-13003}:8080"]
+      KEYS_DIR: /keys
+      IAM_ADMIN_PASSWORD: Integration-only-123!
+      IAM_QUALITY_PASSWORD: Integration-only-123!
+      IAM_OPERATOR_PASSWORD: Integration-only-123!
+    networks:
+      default:
+        aliases: [coldtrace.test, www.coldtrace.test, api.coldtrace.test, iam.coldtrace.test, admin.coldtrace.test]

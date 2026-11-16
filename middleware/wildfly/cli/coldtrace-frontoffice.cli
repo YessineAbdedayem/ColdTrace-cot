@@ -1,0 +1,10 @@
+# ColdTrace: two headers the front-office PWA needs, which the course's default-host.cli does not set.
+#   manifest.webmanifest  served as application/manifest+json (WildFly's file handler does not know the extension)
+#   sw.js                 Service-Worker-Allowed: / (the service worker controls the whole site)
+# Run after default-host.cli.
+batch
+/subsystem=undertow/configuration=filter/response-header=pwa-manifest-type:add(header-name=Content-Type,header-value="application/manifest+json")
+/subsystem=undertow/server=default-server/host=default-host/filter-ref=pwa-manifest-type:add(predicate="path('/manifest.webmanifest')")
+/subsystem=undertow/configuration=filter/response-header=pwa-worker-scope:add(header-name=Service-Worker-Allowed,header-value="/")
+/subsystem=undertow/server=default-server/host=default-host/filter-ref=pwa-worker-scope:add(predicate="path('/sw.js')")
+run-batch

@@ -67,7 +67,7 @@ publish_as_gateway() {
 services_running() {
   local services service
   services="$(docker compose ps --services --filter status=running | tr -d '\r')" || return 1
-  for service in site-broker cloud-broker node-red simulator mongo iam api front-office; do
+  for service in site-broker cloud-broker node-red simulator mongo wildfly; do
     if ! grep -Fxq "$service" <<< "$services"; then
       printf '  Service is not running: %s\n' "$service"
       return 1
@@ -164,10 +164,17 @@ check_mongo() {
   return 1
 }
 
+# fetch_internal URL: GET a URL from inside the Docker network (WildFly's internal port 8080, reached by name),
+# so the check depends neither on the PC's hosts file nor on trusting the HTTPS certificate.
+fetch_internal() {
+  docker compose exec -T simulator node -e '
+    fetch(process.argv[1], {signal: AbortSignal.timeout(5000)})
+      .then(async r => { if (!r.ok) process.exit(1); process.stdout.write(await r.text()); })
+      .catch(() => process.exit(1));' "$1"
+}
+
 api_healthy() {
-  local address
-  address="$(docker compose port api 8080 | tr -d '\r')" || return 1
-  [[ "$(curl -fsS -m 5 "http://$address/api/health" 2>/dev/null)" == '{"status":"ok"}' ]]
+  [[ "$(fetch_internal http://api.coldtrace.test:8080/api/health 2>/dev/null)" == '{"status":"ok"}' ]]
 }
 
 check_api() {
@@ -270,14 +277,13 @@ check_outage() {
 }
 
 check_front_office() {
-  local address
-  address="$(docker compose port front-office 80 | tr -d '\r')" || return 1
-  curl -fsS -m 5 "http://$address/" | grep -Fq 'ColdTrace Monitor' || return 1
-  [[ "$(curl -fsS -m 5 "http://$address/api/health")" == '{"status":"ok"}' ]]
+  # One WildFly: the front-office on its default host (www.coldtrace.test), the API on api.coldtrace.test
+  wait_until 180 api_healthy || return 1
+  fetch_internal http://www.coldtrace.test:8080/ | grep -Fq 'ColdTrace Monitor'
 }
 
-check_result "all eight Compose services are running" services_running
-check_result "Front Office loads and proxies the API health check" check_front_office
+check_result "all six Compose services are running" services_running
+check_result "WildFly serves the Front Office and the API on their own hosts" check_front_office
 check_result "telemetry arrives from all ten sensors on all three sites" check_telemetry
 check_result "MongoDB ping and unique msgId index" check_mongo
 check_result "API answers on /api/health" check_api

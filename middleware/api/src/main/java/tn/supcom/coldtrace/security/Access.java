@@ -19,6 +19,15 @@ public final class Access {
     }
 
     /**
+     * A CORS preflight: the browser asks, with OPTIONS and without any credentials, whether the front-office (served
+     * from another name, www.&lt;domain&gt;) may call the API. It must be answered without a login, or the browser
+     * blocks the real request; that real request still needs its token. WildFly adds the CORS headers.
+     */
+    public static boolean isPreflight(String method) {
+        return "OPTIONS".equalsIgnoreCase(method);
+    }
+
+    /**
      * Everything under /api/ and the alert WebSocket, except the health check (used by Docker and the smoke test).
      * The API's landing page (/) stays public.
      *

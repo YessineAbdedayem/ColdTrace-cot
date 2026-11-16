@@ -8,7 +8,11 @@ const http = require("node:http");
 const os = require("node:os");
 const root = path.join(__dirname, "..");
 const output = path.join(root, "test-results");
-const base = process.env.FRONT_OFFICE_URL || "http://localhost:3000";
+// The front-office's address (WildFly default host). The API is on api.<domain>, same port; the browser must trust
+// the development CA (CI imports it into the browser's certificate store).
+const front = new URL(process.env.FRONT_OFFICE_URL || "https://www.coldtrace.test");
+const base = front.origin;
+const API = `${front.protocol}//api.${front.hostname.replace(/^www\./, "")}${front.port ? ":" + front.port : ""}`;
 const checks = [];
 const username = process.env.PWA_TEST_USER;
 const password = process.env.PWA_TEST_PASSWORD;
@@ -44,7 +48,7 @@ function pass(name) { checks.push(name); console.log("PASS: " + name); }
   const tile = id => page.locator(".tile").filter({ has: page.locator(".tile-id", { hasText: new RegExp("^" + id + "$") }) });
   try {
     await page.goto(base, { waitUntil: "domcontentloaded" });
-    assert.equal((await context.request.get(base + "/api/sensors")).status(), 401);
+    assert.equal((await context.request.get(API + "/api/sensors")).status(), 401);
     await page.locator("#login-user").fill(username);
     await page.locator("#login-password").fill(password);
     await page.locator("#login-submit").click();
@@ -60,7 +64,7 @@ function pass(name) { checks.push(name); console.log("PASS: " + name); }
     for (const icon of manifest.icons) assert.equal((await context.request.get(base + icon.src)).status(), 200);
     const sw = await context.request.get(base + "/sw.js");
     assert.match(sw.headers()["content-type"], /javascript/);
-    assert.match(sw.headers()["cache-control"], /no-store/);
+    assert.match(sw.headers()["cache-control"], /no-cache|no-store/);
     const cdp = await context.newCDPSession(page);
     const manifestCheck = await cdp.send("Page.getAppManifest");
     assert.deepEqual(manifestCheck.errors, []);
@@ -79,10 +83,10 @@ function pass(name) { checks.push(name); console.log("PASS: " + name); }
     pass("Manifest, icon responses, worker headers and Chrome installability criteria");
 
     if (process.env.PWA_TEST_ACTIONS === "1") {
-      const faultResponse = await context.request.get(base + "/api/dev/faults", { headers: apiHeaders });
+      const faultResponse = await context.request.get(API + "/api/dev/faults", { headers: apiHeaders });
       const data = await faultResponse.json();
       const faults = Array.isArray(data) ? data : data.sensors;
-      const incidents = await (await context.request.get(base + "/api/incidents?status=open&limit=200", { headers: apiHeaders })).json();
+      const incidents = await (await context.request.get(API + "/api/incidents?status=open&limit=200", { headers: apiHeaders })).json();
       const selected = faults.find(s => s.fault === "none" && !incidents.some(i => i.sensorId === s.sensorId));
       assert(selected, "Need an idle sensor without an open incident");
       savedFault = { sensorId: selected.sensorId, fault: selected.fault };
@@ -176,7 +180,7 @@ function pass(name) { checks.push(name); console.log("PASS: " + name); }
     await context.setOffline(false);
     await page.unroute("**/api/**");
     if (savedFault) {
-      const response = await context.request.post(base + "/api/dev/faults", { data: savedFault, headers: apiHeaders });
+      const response = await context.request.post(API + "/api/dev/faults", { data: savedFault, headers: apiHeaders });
       assert.equal(response.status(), 200, "Restore tested sensor");
     }
     await context.close();

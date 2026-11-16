@@ -1,0 +1,17 @@
+# The build context is the repository root: send Docker only what the image needs.
+*
+!middleware/api/pom.xml
+!middleware/api/src
+!middleware/iam/pom.xml
+!middleware/iam/src
+!frontends/front-office/index.html
+!frontends/front-office/monitor.css
+!frontends/front-office/monitor.js
+!frontends/front-office/pwa.js
+!frontends/front-office/sw.js
+!frontends/front-office/manifest.webmanifest
+!frontends/front-office/icons
+!middleware/wildfly/cli
+!middleware/wildfly/config
+!middleware/wildfly/www
+!middleware/wildfly/configure.sh

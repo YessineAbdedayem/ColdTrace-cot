@@ -18,7 +18,7 @@ import java.util.logging.Logger;
  * roles, so {@code @RolesAllowed} works on the REST resources.
  *
  * <ul>
- *   <li>/api/health and the landing page: no login;</li>
+ *   <li>/api/health, the landing page and CORS preflights (OPTIONS): no login;</li>
  *   <li>everything else under /api/, and /ws/alerts: a valid token, else 401;</li>
  *   <li>the IAM's key not available yet (IAM never reached): 503.</li>
  * </ul>
@@ -37,7 +37,7 @@ public class BearerTokenMechanism implements HttpAuthenticationMechanism {
     public AuthenticationStatus validateRequest(HttpServletRequest request, HttpServletResponse response,
                                                 HttpMessageContext context) {
         String path = request.getRequestURI().substring(request.getContextPath().length());
-        if (!Access.needsLogin(path)) {
+        if (Access.isPreflight(request.getMethod()) || !Access.needsLogin(path)) {
             return context.doNothing();
         }
         // the query parameter only for the WebSocket: reading parameters elsewhere could consume a request body

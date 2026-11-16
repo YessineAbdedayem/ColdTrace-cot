@@ -40,4 +40,13 @@ class AccessTest {
         assertEquals("hdr", Access.token("/ws/alerts", "Bearer hdr", "abc"));
         assertNull(Access.token("/ws/alerts", null, " "));
     }
+
+    @Test
+    void aCorsPreflightNeedsNoLoginButTheRealRequestsDo() {
+        assertTrue(Access.isPreflight("OPTIONS"));
+        assertTrue(Access.isPreflight("options"));
+        assertFalse(Access.isPreflight("GET"));
+        assertFalse(Access.isPreflight("POST"));
+        assertFalse(Access.isPreflight(null));
+    }
 }

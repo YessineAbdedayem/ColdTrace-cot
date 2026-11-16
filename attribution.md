@@ -24,7 +24,7 @@ Cochez l'option qui correspond à votre réalité et détaillez le périmètre.
 
 **Périmètre :**
 
-- **Oussema Kard, avec Claude Code :** squelette de l'API, endpoints REST, page de supervision, proxy, pipeline MLOps, scripts Docker et documentation.
+- **Oussema Kard, avec Claude Code :** squelette de l'API, endpoints REST, page de supervision, serveur WildFly unique (scripts de l'enseignant et configuration), pipeline MLOps, scripts Docker et documentation.
 - **Khalil Hedhili, avec Claude Code :** alertes précoces dans l'API et le moniteur, surveillance du modèle, détection de dérive, réentraînement automatique, serveur IAM et connexion, script de démarrage `start.ps1`.
 - **Le rôle des membres :** dans les deux cas, le membre a défini les besoins, fait les choix de conception, lancé et vérifié chaque étape (tests, conteneurs, démonstrations) et relu le code.
 - **Yessine Abdedayem, avec GitHub Copilot :** assistance sur le simulateur, la stack de développement et l'acquittement des incidents.
@@ -37,7 +37,8 @@ Cochez l'option qui correspond à votre réalité et détaillez le périmètre.
 | Contrat de messages et incidents (`middleware/api`) | Claude Code (Claude Opus 5.5) | Alignement de l'API sur le contrat de l'équipe (MQTTS, identifiants lus dans le topic) ; ajout des incidents « porte ouverte » et « capteur silencieux » au moteur d'alertes |
 | Endpoints REST (`middleware/api`) | Claude Code (Claude Opus 5.5) | `GET /api/sensors`, `/api/incidents`, `/api/gateways` et proxy vers l'API de pannes du simulateur, pour tester le système sans terminal |
 | Page de supervision (première version du front-office) | Claude Code (Claude Opus 5.5) | Interface de test au design « conteneur frigorifique » : tuiles capteurs, courbes, boutons de pannes, journal des incidents en direct |
-| Proxy inverse (`middleware/proxy`) | Claude Code (Claude Opus 5.5) | Proxy WildFly/Undertow (hôtes virtuels et handlers reverse-proxy) qui sert `coldtrace.test`, `api.coldtrace.test`, `iam.coldtrace.test` et `mlflow.coldtrace.test` via le fichier hosts |
+| Serveur WildFly unique (`middleware/wildfly`) | Claude Code (Claude Opus 5.5) | Un seul WildFly qui sert le front-office, le back-office, l'API et l'IAM (un hôte virtuel par nom) avec les scripts fournis par l'enseignant (`default-host.cli`, `add-host.cli`, `add-api.cli`, appliqués sans modification) : fichiers `.properties` dev/prod, scripts complémentaires (sécurité, HTTPS, port interne, en-têtes PWA, proxy vers MLflow et l'API du modèle), Dockerfile, script de déploiement, certificat HTTPS de développement, adaptation des tests et de la CI |
+| Appels cross-origin du front-office (`frontends/front-office/monitor.js`, `middleware/api`) | Claude Code (Claude Opus 5.5) | Appels directs à `api.<domaine>` et `iam.<domaine>` (CORS), et réponse sans connexion aux requêtes de pré-vérification CORS (`OPTIONS`) dans l'API |
 | Générateur de données (`mlops/generator`) | Claude Code (Claude Opus 5.5) | 30 jours de mesures réalistes avec pannes injectées et journalisées, faute d'incidents réels en nombre suffisant |
 | Pipeline d'entraînement (`mlops/pipeline`) | Claude Code (Claude Opus 5.5) | Préparation des variables, modèle LightGBM d'alerte précoce, évaluation contre les règles actuelles, suivi MLflow et règle de promotion, pipeline en une commande |
 | API du modèle (`mlops/serving`) | Claude Code (Claude Opus 5.5) | Service FastAPI qui charge le modèle `@production` depuis MLflow et prédit sur les mesures en direct |
@@ -56,7 +57,7 @@ Cochez l'option qui correspond à votre réalité et détaillez le périmètre.
 Précisez si vous avez utilisé une base de code préexistante.
 
 *   *Code de départ enseignant / squelette du cours :*
-    *   [ ] Oui (indiquer quels modules : ______________________)
+    *   [x] Oui (indiquer quels modules : scripts WildFly fournis par l'enseignant, `default-host.cli`, `add-host.cli` et `add-api.cli`, utilisés sans modification dans `middleware/wildfly/cli/`)
     *   [ ] Non
 *   *Réutilisation d'anciens projets (Années précédentes / GitHub externes) :*
     *   [ ] Oui (Lien du dépôt d'origine : https://github.com...)

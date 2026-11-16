@@ -43,9 +43,9 @@ These are the three profiles of the specification:
 | `GET /health` | anyone | `{"status": "ok"}` |
 
 Addresses:
-- from the PC: `http://localhost:8081` (`IAM_PORT`);
-- through the proxy: `http://iam.coldtrace.test`;
-- from the other containers: `http://iam:8080`.
+- from the PC: `https://iam.coldtrace.test`, deployed as `iam-1.0.war` in the ColdTrace WildFly
+  ([middleware/wildfly](../wildfly/README.md)), which also serves the API and the monitor;
+- from the other containers: `http://iam.coldtrace.test:8080`, the WildFly's internal port.
 
 ## Security choices
 

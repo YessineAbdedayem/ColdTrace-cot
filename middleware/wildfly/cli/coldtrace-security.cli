@@ -1,0 +1,4 @@
+# ColdTrace: Jakarta Security with our own mechanisms (BearerTokenMechanism in the API and the IAM).
+# WildFly must trust the caller our mechanism logs in, not look it up again in its own user files:
+# integrated JASPI off for the "other" application security domain (both WARs' jboss-web.xml use it).
+/subsystem=undertow/application-security-domain=other:write-attribute(name=integrated-jaspi,value=false)

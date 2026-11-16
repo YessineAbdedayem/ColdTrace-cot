@@ -12,8 +12,8 @@ out of range. A model will predict the temperature a few minutes ahead and raise
 | 2. Export and cleaning (`pipeline/prepare.py`) | Done |
 | 3. Features and target (`pipeline/features.py`) | Done |
 | 4. Training and evaluation (`pipeline/train.py`, `pipeline/evaluate.py`) | Done |
-| 5. Tracking and model registry with MLflow (`pipeline/tracking.py`, http://mlflow.coldtrace.test) | Done |
-| 6. Serving (`serving/`, http://api.coldtrace.test/ml/docs) | Done |
+| 5. Tracking and model registry with MLflow (`pipeline/tracking.py`, https://mlflow.coldtrace.test) | Done |
+| 6. Serving (`serving/`, https://api.coldtrace.test/ml/docs) | Done |
 | 7. Integration in the API and the monitor (`early_warning` incidents, see `middleware/api/README.md`) | Done, to be checked live |
 | 8. Automated pipeline (`pipeline/run.py`, `.github/workflows/mlops.yml`) | Done |
 | 9a. Monitoring: live error and warning accuracy (`pipeline/monitor.py`) | Done, to be checked live |
@@ -125,7 +125,7 @@ Outputs in `mlops/data/`:
 ## MLflow: tracking and model registry (step 5)
 
 MLflow runs as a container (`mlflow`, version 2.18) and keeps everything in the `mlflow-data` Docker volume. Open it at
-**http://mlflow.coldtrace.test**, through `middleware/proxy`.
+**https://mlflow.coldtrace.test**, through the ColdTrace WildFly (`middleware/wildfly`).
 
 Each `train.py` run is logged to the **`coldtrace-early-warning`** experiment with:
 - **parameters:** LightGBM settings, chosen margin, rounds kept, data size, start of the test period;
@@ -169,7 +169,7 @@ and serving can't drift apart.
 | `POST /predict` | The same forecast from readings sent in the request (at least 16 minutes; `profile`, optional `limitMax`) |
 
 Addresses:
-- **Through the proxy:** `http://api.coldtrace.test/ml/...`, and the interactive docs at **http://api.coldtrace.test/ml/docs**;
+- **Through the WildFly:** `https://api.coldtrace.test/ml/...`, and the interactive docs at **https://api.coldtrace.test/ml/docs**;
 - **Directly:** `http://localhost:8001/...`, API calls only;
 - **From the other containers:** `http://model-api:8000/...`.
 
@@ -376,8 +376,8 @@ curl http://localhost:8001/health
 curl http://localhost:8001/forecast/S01
 ```
 
-To see MLflow in the browser, add the `mlflow.coldtrace.test` name to the hosts file and start the proxy
-([middleware/proxy/README.md](../middleware/proxy/README.md)).
+To see MLflow in the browser, the `*.coldtrace.test` names must be in the hosts file and the platform's WildFly
+running ([middleware/wildfly/README.md](../middleware/wildfly/README.md)).
 
 The first build takes about 5 minutes (LightGBM, pandas); after that, each step takes seconds.
 

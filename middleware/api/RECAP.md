@@ -207,7 +207,7 @@ From `gateway-iot/` (see its README for the first-time setup: `.env` and certifi
 
 ```bash
 docker compose up -d --build                 # whole stack, API included
-curl http://localhost:8080/api/health        # set API_PORT in .env if 8080 is taken
+curl --ssl-no-revoke https://api.coldtrace.test/api/health   # the API now runs in the ColdTrace WildFly (middleware/wildfly)
 ```
 
 To run the API on its own next to the stack, see `README.md`, section "How to build and run".

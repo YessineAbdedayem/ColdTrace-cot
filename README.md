@@ -20,12 +20,19 @@ Deux applications clientes sont prévues :
 
 ## Technologies
 
-Le Front Office est désormais servi par **WildFly 42 / Undertow** dans le service
-`front-office`, à la même adresse locale `http://localhost:3000` par défaut.
-Les routes REST, IAM et WebSocket restent sur la même origine. Le proxy extérieur
-(lui aussi sur WildFly/Undertow) reste optionnel pour les noms locaux ; il ne sert aucun fichier de la PWA.
-Le projet n'utilise plus Nginx. Voir [le lancement local](docs/LANCEMENT-LOCAL.md) pour les propriétés CLI,
-les tests et les limites HTTPS.
+**Un seul WildFly 42** sert tout ColdTrace, avec un hôte virtuel par nom, configuré par les scripts du cours
+(`default-host.cli`, `add-host.cli`, `add-api.cli`) et un fichier `.properties` par environnement
+([middleware/wildfly](middleware/wildfly/README.md)) :
+
+| Adresse | Contenu |
+|---|---|
+| https://coldtrace.test, https://www.coldtrace.test | front-office (PWA), fichiers statiques |
+| https://admin.coldtrace.test | back-office |
+| https://api.coldtrace.test | `api-1.0.war` : API REST et WebSocket d'alertes |
+| https://iam.coldtrace.test | `iam-1.0.war` : serveur de connexion |
+
+Le moniteur appelle l'API et l'IAM directement sur leurs noms (CORS des scripts du cours), en HTTPS. Le projet
+n'utilise pas Nginx. Voir aussi [le lancement local](docs/LANCEMENT-LOCAL.md).
 
 | Couche | Technologies |
 |---|---|
@@ -42,17 +49,17 @@ les tests et les limites HTTPS.
 ├── README.md
 ├── docs/                          # Cahier des charges, PDF, format des messages, MLOPS.md et ses figures
 ├── frontends/
-│   ├── front-office/              # PWA : moniteur, manifeste, service worker, icônes, tests et Undertow
+│   ├── front-office/              # PWA : moniteur, manifeste, service worker, icônes et tests
 │   └── back-office/               # Réservé à la future PWA
 ├── middleware/
 │   ├── api/                       # Projet Maven existant : ingestion, alertes, REST et WebSocket
 │   ├── core/                      # Réservé ; aucun module Maven pour le moment
 │   ├── iam/                       # Serveur de connexion (Jakarta Security) : utilisateurs, rôles, jetons signés
-│   └── proxy/                     # Proxy inverse WildFly/Undertow : coldtrace.test, api.coldtrace.test, iam.coldtrace.test, mlflow.coldtrace.test
+│   └── wildfly/                   # LE serveur WildFly : scripts du cours + propriétés dev/prod, image Docker, déploiement
 ├── gateway-iot/                    # Node-RED, brokers MQTT, simulateur et stack Docker Compose
 ├── mlops/                         # Pipeline MLOps : données, entraînement, MLflow, API du modèle, surveillance, CI
 ├── start.ps1, start.cmd           # Démarrage de tout le projet en une commande (Windows)
-└── .github/workflows/mlops.yml     # CI GitHub Actions du pipeline MLOps
+└── .github/workflows/             # CI : mlops.yml (pipeline MLOps), wildfly-platform.yml (WildFly, HTTPS, PWA)
 ```
 
 ## Démarrage rapide (Windows)
@@ -67,23 +74,35 @@ Avec Docker Desktop lancé, depuis la racine du dépôt :
 ```
 
 Le script peut être relancé à tout moment : chaque étape saute ce qui est déjà fait. Il crée `gateway-iot/.env`, les
-certificats, `mlops/.env` (avec un mot de passe aléatoire) et l'utilisateur MongoDB du pipeline s'ils manquent. Il
-construit et démarre les conteneurs, et n'entraîne le modèle que si MLflow n'a pas encore de modèle `@production`.
+certificats (dont le certificat HTTPS `*.coldtrace.test`), `mlops/.env` (avec un mot de passe aléatoire) et
+l'utilisateur MongoDB du pipeline s'ils manquent. Il fait accepter l'autorité de développement par Windows (une fenêtre
+de confirmation la première fois) et signale les noms manquants dans le fichier hosts. Il construit et démarre les
+conteneurs, et n'entraîne le modèle que si MLflow n'a pas encore de modèle `@production`.
+
+Une fois par poste, ajouter les noms au fichier hosts (PowerShell **en administrateur**) :
+
+```powershell
+Add-Content -Path C:\Windows\System32\drivers\etc\hosts -Encoding ASCII -Value "`n127.0.0.1   coldtrace.test www.coldtrace.test api.coldtrace.test iam.coldtrace.test admin.coldtrace.test mlflow.coldtrace.test"
+ipconfig /flushdns
+```
 
 | Adresse | Service |
 |---|---|
-| http://localhost:3000 | Moniteur (Front Office) : se connecter avec `admin`, `qualite` ou `operateur` |
-| http://localhost:8080/api/sensors | API REST |
-| http://localhost:8081/auth/login | Serveur de connexion (IAM) : utilisateurs `admin`, `qualite`, `operateur`, mots de passe dans `gateway-iot/.env` (`IAM_*_PASSWORD`) |
-| http://localhost:8001/docs | API du modèle |
-| http://localhost:8001/monitoring | Scores du modèle en direct, dérive et réentraînements |
+| https://coldtrace.test | Moniteur (Front Office) : se connecter avec `admin`, `qualite` ou `operateur` |
+| https://admin.coldtrace.test | Back-office (page provisoire) |
+| https://api.coldtrace.test/api/health | API REST |
+| https://iam.coldtrace.test/auth/login | Serveur de connexion (IAM) : utilisateurs `admin`, `qualite`, `operateur`, mots de passe dans `gateway-iot/.env` (`IAM_*_PASSWORD`) |
+| https://api.coldtrace.test/ml/docs | API du modèle |
+| https://api.coldtrace.test/ml/monitoring | Scores du modèle en direct, dérive et réentraînements |
+| https://mlflow.coldtrace.test | MLflow |
 
 Le backend reste un seul projet Maven dans `middleware/api/`, avec son moteur d'alertes.
-Le moniteur est servi séparément depuis [frontends/front-office/](frontends/front-office/README.md), sur le port 3000
+Le moniteur ([frontends/front-office/](frontends/front-office/README.md)) est servi par le même WildFly, sur son hôte
 par défaut. Le serveur de connexion est dans [middleware/iam/](middleware/iam/README.md) : connexion, rôles (`admin`,
 `quality`, `operator`) et jetons signés. **L'API, le WebSocket d'alertes et le moniteur demandent une connexion** :
 le moniteur affiche un écran de connexion, et chaque acquittement est signé par le compte connecté. Seul
-`/api/health` reste public. Le Back Office et `core/` restent réservés et contiennent uniquement un `.gitkeep`.
+`/api/health` reste public. Le Back Office (une page provisoire sur `admin.coldtrace.test`) et `core/` restent à
+construire.
 
 Le Front Office peut être installé depuis un navigateur compatible. Hors ligne, seule l'interface statique reste
 disponible : les valeurs des mesures sont masquées et les actions désactivées. Aucune donnée opérationnelle n'est
@@ -106,8 +125,8 @@ un modèle qui prédit la température maximale des 10 prochaines minutes et **p
 | Données | Générateur de 30 jours réalistes (10 capteurs, 750 pannes étiquetées) dans une base séparée `coldtrace_ml` |
 | Préparation | Une ligne par capteur et par minute, 16 variables calculées sur le passé, découpage par date |
 | Entraînement et évaluation | LightGBM, comparé aux règles actuelles et à deux méthodes simples sur 8 jours jamais vus |
-| Suivi et registre | MLflow (http://mlflow.coldtrace.test) : chaque entraînement, ses scores, sa courbe d'apprentissage et son modèle ; `@production` ne passe qu'à un modèle meilleur |
-| Service | API du modèle (http://api.coldtrace.test/ml/docs), rechargée automatiquement quand `@production` change |
+| Suivi et registre | MLflow (https://mlflow.coldtrace.test) : chaque entraînement, ses scores, sa courbe d'apprentissage et son modèle ; `@production` ne passe qu'à un modèle meilleur |
+| Service | API du modèle (https://api.coldtrace.test/ml/docs), rechargée automatiquement quand `@production` change |
 | Intégration | L'API Java interroge le modèle toutes les 30 s et ouvre un incident `early_warning`, en jaune dans le moniteur, avant l'alerte réelle ; il est remplacé par l'alerte réelle quand elle arrive |
 | Surveillance | Chaque prévision est enregistrée puis comparée 10 min plus tard à la réalité : erreur en direct, précision et rappel des alertes, par version du modèle |
 | Dérive | Les entrées en direct sont comparées aux données d'entraînement, variable par variable (PSI) : `ok`, `watch` ou `drift` |
@@ -141,8 +160,8 @@ prennent 5 à 30 minutes : sur une montée réaliste (+0,2 °C/min), l'alerte pr
 5 minutes avant la limite. Les entrées du simulateur sont aussi bien plus régulières que les données d'entraînement :
 la surveillance signale donc une dérive, ce qui est une vraie observation et pas une erreur.
 
-Les adresses `*.coldtrace.test` demandent d'ajouter ces noms au fichier hosts et de démarrer le proxy :
-voir [middleware/proxy/README.md](middleware/proxy/README.md).
+Les adresses `*.coldtrace.test` demandent ces noms dans le fichier hosts (voir le démarrage rapide) ; le WildFly
+transmet `api.coldtrace.test/ml/` et `mlflow.coldtrace.test` aux conteneurs de `mlops/`.
 
 ## Avancement des livrables
 
@@ -182,12 +201,16 @@ Les mots de passe de connexion (`IAM_ADMIN_PASSWORD`, `IAM_QUALITY_PASSWORD`, `I
 moins 10 caractères. Les exemples `change-me` sont refusés par le serveur de connexion. `run-all.sh` et `.\start` les
 remplacent par des valeurs aléatoires.
 
-Si le port 8080 est déjà pris sur la machine (par exemple par Oracle), mettre `API_PORT=18080` dans `.env` et utiliser
-ce port dans les tests ci-dessous.
+Le WildFly a aussi besoin de `WEB_TLS_PASSWORD` dans `.env`, de son certificat HTTPS
+(`WEB_TLS_PASSWORD=... ../middleware/wildfly/gen-web-cert.sh`), des noms `*.coldtrace.test` dans le fichier hosts et de
+l'autorité de développement acceptée par le PC : `.\start` fait tout cela. Il utilise les ports 80 et 443.
+
+Sous Windows, `curl.exe` vérifie la révocation des certificats, ce que l'autorité de développement ne publie pas :
+ajouter `--ssl-no-revoke` aux commandes `curl` en `https://` ci-dessous.
 
 ```bash
-docker compose up -d --build  # 8 services + dev-seed (enregistre les capteurs puis s'arrête)
-docker compose ps             # site-broker, cloud-broker, node-red, simulator, mongo, iam, api, front-office : tous "Up"
+docker compose up -d --build  # 6 services + dev-seed (enregistre les capteurs puis s'arrête)
+docker compose ps             # site-broker, cloud-broker, node-red, simulator, mongo, wildfly : tous "Up"
 ./scripts/smoke-test.sh       # tests automatiques de bout en bout : chaque ligne doit afficher PASS
 ```
 
@@ -198,10 +221,9 @@ exemple pour une démonstration.
 
 ### Le plus simple : la page de supervision
 
-Ouvrir **http://localhost:3000/** (ou le port de `FRONT_OFFICE_PORT`). Le Front Office remplace la plupart des commandes
-de cette section. L'API conserve son port (`API_PORT`, 18080 sur le PC de développement) ; son ancien chemin `/monitor/`
-n'héberge plus le tableau de bord. Le WildFly du Front Office sert les fichiers, transmet `/api/` et `/ws/alerts` à l'API et `/auth/` au
-serveur de connexion :
+Ouvrir **https://coldtrace.test**. Le Front Office remplace la plupart des commandes de cette section. Le WildFly le
+sert sur son hôte par défaut ; la page appelle l'API sur `https://api.coldtrace.test` et le serveur de connexion sur
+`https://iam.coldtrace.test` :
 
 - **Connexion :** la page s'ouvre sur un écran de connexion (`admin`, `qualite` ou `operateur`, mots de passe dans
   `gateway-iot/.env`). L'en-tête affiche le compte et ses rôles, avec **Log out**. Les boutons de pannes sont réservés
@@ -220,8 +242,8 @@ coupure du cloud (test 10).
 ### 1. L'API fonctionne
 
 ```bash
-curl http://localhost:8080/api/health        # {"status":"ok"}
-docker compose logs api | grep -E "MongoDB|MQTT|Subscribed"
+curl https://api.coldtrace.test/api/health   # {"status":"ok"}
+docker compose logs wildfly | grep -E "MongoDB|MQTT|Subscribed"
 ```
 
 **Attendu :**
@@ -229,7 +251,7 @@ docker compose logs api | grep -E "MongoDB|MQTT|Subscribed"
 - `Connected to MQTT broker ssl://cloud-broker:8883`
 - `Subscribed to coldtrace/+/+/telemetry, coldtrace/+/gateway/status (QoS 1)`
 
-Pour suivre le journal en direct pendant les tests suivants : `docker compose logs -f api`.
+Pour suivre le journal en direct pendant les tests suivants : `docker compose logs -f wildfly`.
 
 ### 2. Voir la base de données
 
@@ -294,11 +316,11 @@ passe de `gateway-iot/.env`, puis récupérer l'identifiant de l'incident `door`
 `GET /api/incidents?status=open` et remplacer `<id>` dans la commande :
 
 ```bash
-TOKEN=$(curl -s http://localhost:8081/auth/login -H 'Content-Type: application/json' \
+TOKEN=$(curl -s https://iam.coldtrace.test/auth/login -H 'Content-Type: application/json' \
   -d "{\"username\":\"operateur\",\"password\":\"$(grep ^IAM_OPERATOR_PASSWORD= .env | cut -d= -f2-)\"}" \
   | sed 's/.*"accessToken":"\([^"]*\)".*/\1/')
-curl -H "Authorization: Bearer $TOKEN" 'http://localhost:8080/api/incidents?status=open'
-curl -X POST http://localhost:8080/api/incidents/<id>/ack -H "Authorization: Bearer $TOKEN" \
+curl -H "Authorization: Bearer $TOKEN" 'https://api.coldtrace.test/api/incidents?status=open'
+curl -X POST https://api.coldtrace.test/api/incidents/<id>/ack -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' -d '{"comment":"Vérification de la porte en cours"}'
 ```
 
@@ -411,7 +433,10 @@ cela enregistrerait les modifications dans `gateway-iot/node-red/flows.json`.
 
 | Symptôme | Cause probable |
 |---|---|
-| `curl` sur 8080 renvoie la page d'un autre serveur | Le port 8080 est pris : mettre `API_PORT=18080` dans `.env`, puis `docker compose up -d` |
+| Le WildFly ne démarre pas : `port is already allocated` | Le port 80 ou 443 est pris par un autre programme (IIS, Skype, un autre serveur web) : l'arrêter |
+| Le navigateur : `NET::ERR_CERT_AUTHORITY_INVALID` | L'autorité de développement n'est pas acceptée : relancer `.\start` (ou `Import-Certificate -FilePath gateway-iot\certs\ca.crt -CertStoreLocation Cert:\CurrentUser\Root`), puis redémarrer le navigateur |
+| `curl.exe` : `CRYPT_E_NO_REVOCATION_CHECK` | Ajouter `--ssl-no-revoke` : Windows vérifie la révocation, que l'autorité de développement ne publie pas |
+| `admin.coldtrace.test` ou `www.coldtrace.test` introuvable | Le nom manque dans le fichier hosts (voir le démarrage rapide) |
 | Journal de l'API : `MQTT connect ... failed` | Le broker n'est pas encore démarré (l'API réessaie toutes les 5 s), ou `CLOUD_BACKEND_PASSWORD` est faux |
 | Journal de l'API : `Connection refused` vers `localhost:27017` | `MONGO_URI` contient `localhost` : dans un conteneur, il faut `mongo` |
 | Compass : `Authentication failed` | Il manque `?authSource=coldtrace`, ou l'utilisateur ou le mot de passe est faux |

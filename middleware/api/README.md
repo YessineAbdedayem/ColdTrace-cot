@@ -85,9 +85,10 @@ to `http://simulator:4000`; never set it in production.
 
 ## Monitor page
 
-Open the independent **Front Office at http://localhost:3000/** (`FRONT_OFFICE_PORT`, default 3000).
-Its sources are in `frontends/front-office/`, outside the WAR. It retains the existing development monitor;
-PWA functionality is not implemented yet. The API keeps its existing `API_PORT`.
+Open the **Front Office at https://coldtrace.test**. Its sources are in `frontends/front-office/`, outside the WAR.
+The ColdTrace WildFly ([middleware/wildfly](../wildfly/README.md)) serves it on its default host, and this API, as
+`api-1.0.war`, on `https://api.coldtrace.test`. The monitor calls the API there directly: cross-origin, allowed by
+WildFly's CORS filters. The API answers CORS preflights (`OPTIONS`) without a login (`Access.isPreflight`).
 
 - **Sites and sensors:** each sensor tile shows its temperature, humidity, door, the time since its last reading
   and a sparkline of the last 2 minutes, with the allowed band. It refreshes every 5 s.
@@ -202,7 +203,9 @@ they also run during `docker build`. To test the whole system by hand (readings,
 ## How to build and run
 
 The simplest way is `gateway-iot/scripts/run-all.sh`, which starts the API with the rest of the stack and tests it.
-The steps below run the API on its own.
+In the team stack, the API runs as `api-1.0.war` inside the ColdTrace WildFly ([middleware/wildfly](../wildfly/README.md)),
+next to the login server and the front-office. The steps below run the API **on its own**, in its own WildFly
+container (this folder's `Dockerfile`), for development only.
 
 ### 1. Build the image
 
@@ -245,7 +248,7 @@ brokers, the gateway, the simulator and MongoDB. See `gateway-iot/README.md`. In
 ```bash
 cp .env.example .env          # then change every change-me password
 ./scripts/gen-certs.sh        # dev CA + cloud-broker certificate
-docker compose up -d --build  # API on http://localhost:8080 (set API_PORT in .env if 8080 is taken)
+docker compose up -d --build  # the WildFly: API on https://api.coldtrace.test (see middleware/wildfly/README.md)
 ```
 
 **On its own, next to the team stack.** This is useful to try a local change without rebuilding the whole stack.
@@ -274,7 +277,7 @@ docker compose up -d --build  # API on http://localhost:8080 (set API_PORT in .e
 Check it is up:
 
 ```bash
-curl http://localhost:8080/api/health          # or :18080 for the container started on its own
+curl https://api.coldtrace.test/api/health     # needs the hosts file and the trusted dev CA (.\start)
 # {"status":"ok"}
 ```
 

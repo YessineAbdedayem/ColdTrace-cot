@@ -1,0 +1,26 @@
+# ColdTrace: the two MLOps services, which are Python (not WildFly applications), behind WildFly's reverse proxy,
+# so every ColdTrace address goes through the same server, with the same HTTPS and filters.
+#
+#   mlflow.<domain>      -> mlflow:5000      experiment tracking and model registry (mlops/)
+#   api.<domain>/ml/...  -> model-api:8000   the early-warning model (the /ml prefix is removed)
+#
+# Run after default-host.cli (filters) and add-api.cli for the api (api-host).
+# max-retries=0: a request is never sent twice to a backend.
+set mlflowHost=`:resolve-expression(expression=${mlflow.host})`
+set mlflowPort=`:resolve-expression(expression=${mlflow.port})`
+set mlflowAlias=`:resolve-expression(expression=${mlflow.aliases})`
+set modelHost=`:resolve-expression(expression=${model.host})`
+set modelPort=`:resolve-expression(expression=${model.port})`
+batch
+/socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=mlflow:add(host=$mlflowHost,port=$mlflowPort)
+/socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=model-api:add(host=$modelHost,port=$modelPort)
+/subsystem=undertow/configuration=handler/reverse-proxy=to-mlflow:add(max-retries=0)
+/subsystem=undertow/configuration=handler/reverse-proxy=to-mlflow/host=backend:add(outbound-socket-binding=mlflow,scheme=http,path="/")
+/subsystem=undertow/configuration=handler/reverse-proxy=to-model-api:add(max-retries=0)
+/subsystem=undertow/configuration=handler/reverse-proxy=to-model-api/host=backend:add(outbound-socket-binding=model-api,scheme=http,path="/")
+/subsystem=undertow/server=default-server/host=mlflow-host:add(alias=[$mlflowAlias])
+/subsystem=undertow/server=default-server/host=mlflow-host/location=\/:add(handler=to-mlflow)
+/subsystem=undertow/server=default-server/host=mlflow-host/filter-ref=hsts-header:add(predicate="equals(%p,443)")
+/subsystem=undertow/server=default-server/host=mlflow-host/filter-ref=http-to-https:add(predicate="equals(%p,80)")
+/subsystem=undertow/server=default-server/host=api-host/location=\/ml:add(handler=to-model-api)
+run-batch

@@ -1,4 +1,0 @@
-# Do not activate until a real, allowlisted public artifact exists at this path.
-host.path=/opt/jboss/back-office
-host.key=admin
-host.aliases=admin.coldtrace.test

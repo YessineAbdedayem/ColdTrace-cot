@@ -2,11 +2,11 @@
 
 The existing monitor is now an installable Progressive Web Application with real
 backend data, simulator controls and incident acknowledgement. It retains the dark
-industrial interface and its three sites/ten sensors. It is served independently
-of the API WAR, in a dedicated WildFly 42/Undertow container, with no frontend
-framework or runtime npm dependency. The project no longer uses Nginx.
+industrial interface and its three sites/ten sensors. It has no frontend framework or runtime npm dependency.
 
-See [the local start guide](../../docs/LANCEMENT-LOCAL.md) for CLI properties and validation.
+It is served by **the ColdTrace WildFly** ([middleware/wildfly](../../middleware/wildfly/README.md)), as static files of
+its default virtual host (course script `default-host.cli`), at **https://www.coldtrace.test** (and
+https://coldtrace.test). The API and the login server are other virtual hosts of the same WildFly.
 
 **Early warnings** from the MLOps model (`early_warning` incidents, see
 [middleware/api/README.md](../../middleware/api/README.md)) appear in yellow:
@@ -20,9 +20,10 @@ The real alert keeps its orange style.
 **Login.** The monitor opens on a sign-in screen. The accounts come from the login server
 ([middleware/iam](../../middleware/iam/README.md)): `admin`, `qualite`, `operateur`, with passwords in
 `gateway-iot/.env` (`IAM_*_PASSWORD`).
-- **Where login goes:** Undertow forwards `/auth/` to the IAM, so login stays on the page's origin and needs no CORS.
-- **The token** is sent as `Authorization: Bearer` on every `/api/` call, and as `?access_token=` on the alert WebSocket.
-  Undertow has no access log enabled; the optional external proxy excludes that WebSocket path.
+- **Where login goes:** to `https://iam.<domain>/auth/login`, the login server's own host (cross-origin, allowed by
+  WildFly's CORS filters).
+- **The token** is sent as `Authorization: Bearer` on every call to `https://api.<domain>/api/...`, and as
+  `?access_token=` on the alert WebSocket `wss://api.<domain>/ws/alerts`.
 - **The session** lives in `sessionStorage`: closing the tab, the token's expiry (8 h), any 401 from the API, or
   **Log out** returns to the sign-in screen, and clears the sensors and incidents from the page.
 - **The header** shows the user's name and roles.
@@ -30,57 +31,40 @@ The real alert keeps its orange style.
 - **The fault buttons** (Door, Thaw, Mute, Reset, Clear all) only work for `admin` and `operator`; the API enforces
   the same rule.
 
-The shell cache is `coldtrace-shell-v7`. `/auth/` is never cached.
+The shell cache is `coldtrace-shell-v8`. Only same-origin shell files are cached: the API and the login server, on
+other hosts, never are.
 
 ## Run
 
-Start Docker Desktop, then from the repository root:
+From the repository root, `.\start` builds and starts everything, including the WildFly. Or from `gateway-iot/`:
 
 ```powershell
-cd gateway-iot
 docker compose up -d --build
 ```
 
-Open **http://localhost:3000/**. The backend keeps its existing port: `API_PORT`
-(18080 on the development PC, 8080 by default). Set `FRONT_OFFICE_PORT` in
-`gateway-iot/.env` to change only the frontend port.
+Open **https://coldtrace.test**. First-time setup is in [middleware/wildfly/README.md](../../middleware/wildfly/README.md):
+- the `*.coldtrace.test` names in the hosts file;
+- the HTTPS certificate;
+- trusting the development CA.
 
-The existing `.env` and certificates must already be present; first-time setup is
-documented in [the gateway README](../../gateway-iot/README.md). Java/Maven are
-provided by the API Docker build. No npm install is required to run the application;
-Playwright is a development-only dependency for browser tests.
+The WildFly image copies only the public files: `index.html`, `monitor.css`, `monitor.js`, `pwa.js`, `sw.js`,
+`manifest.webmanifest` and `icons/`. After editing them, rebuild with `docker compose up -d --build wildfly`. For live
+development, add `-f docker-compose.yml -f docker-compose.frontend-dev.yml` before `up`: the files are then mounted
+read-only over the copies.
 
-With the backend already running, build/start only the frontend:
+## Where the page sends its requests
 
-```powershell
-docker compose up -d --build --no-deps front-office
-```
-
-After editing HTML/CSS/JavaScript or `wildfly/`, rebuild `front-office` with the
-same command. Only public files are copied into the image. For live development,
-add `-f docker-compose.yml -f docker-compose.frontend-dev.yml` before `up`;
-the individual public assets are then mounted read-only.
-
-## REST and WebSocket configuration
-
-| Browser request | WildFly/Undertow serves or forwards to |
+| Request | Goes to |
 |---|---|
-| `GET /` and static assets | Allowlisted public files copied into `/opt/jboss/frontend` |
-| `/api/*` | `http://api:8080/api/*`, preserving path, query string, method and body |
-| `/ws/alerts` | The same backend path with HTTP/1.1 WebSocket upgrade headers |
-| `/auth/*` | `http://iam:8080/auth/*`, preserving method, body and headers |
+| The page and its assets | `https://www.<domain>/...`, the WildFly's default host |
+| Login | `https://iam.<domain>/auth/login` |
+| REST | `https://api.<domain>/api/...` |
+| Live alerts | `wss://api.<domain>/ws/alerts?access_token=...` |
 
-The browser only talks to its own frontend origin. It never needs a Docker hostname
-or the backend host port. `wildfly/frontend.properties` names the API/IAM services
-and their internal ports. DNS caching is bounded so the proxy can recover after API
-container replacement. The browser maintains one WebSocket and one reconnect timer,
-with backoff from 1 to 15 seconds; offline browsers do not run reconnect loops.
-Undertow forwards requests to the existing development fault proxy; it does not connect
-the browser directly to the simulator. Backend CORS/security settings are unchanged.
-
-The old URL `http://localhost:<API_PORT>/monitor/` is no longer served. Use the new
-frontend URL instead. The backend root is now an informational API page. No copy of
-the dashboard is included in the WAR, and no fixed-port redirect is added to the API.
+`monitor.js` derives `api.<domain>` and `iam.<domain>` from the page's own address (scheme, domain and port). The same
+files therefore work in development (`coldtrace.test`) and production (`coldtrace.tld`) with no configuration. The
+browser keeps one WebSocket and one reconnect timer, with backoff from 1 to 15 seconds; offline browsers do not run
+reconnect loops.
 
 ## Verify the dashboard
 
@@ -97,14 +81,17 @@ the dashboard is included in the WAR, and no fixed-port redirect is added to the
 These actions create persistent demonstration incidents. They do not use mocked data.
 Reset only the sensors you test; avoid clearing other people's active scenarios.
 
-From `gateway-iot/`, `docker compose logs -f front-office api` shows proxy/backend logs.
-`docker compose stop` stops the stack while preserving data. The existing full smoke
-test also checks frontend loading and the REST proxy, but it removes selected test
-incidents and resets simulator faults; use it only on a disposable test dataset.
+From `gateway-iot/`, `docker compose logs -f wildfly` shows the WildFly's logs (front-office, API and login server).
+`docker compose stop` stops the stack while preserving data. The full smoke test (`gateway-iot/scripts/smoke-test.sh`)
+also checks that WildFly serves the front-office and the API, but it removes selected test incidents and resets
+simulator faults; use it only on a disposable test dataset.
+
+The CI workflow [wildfly-platform.yml](../../.github/workflows/wildfly-platform.yml) runs `tests/hosting-smoke.cjs` and
+`tests/pwa-browser.cjs` against an isolated stack (`tests/hosting.compose.yml`, published on port 13443).
 
 ## Install as an application
 
-Visit **http://localhost:3000/** online first. In supported Chrome/Edge browsers,
+Visit **https://coldtrace.test** online first. In supported Chrome/Edge browsers,
 use **Install app** when offered or the browser's install menu/address-bar icon.
 The manifest provides standalone display, portrait/landscape support, dark theme
 colors and original 192/512 px PNG icons, including a separate maskable icon.
@@ -116,9 +103,8 @@ prompt. Installation UI depends on browser/device policy; private browsing may
 disable installation or persistent shell storage. Mobile Safari and native mobile
 installation were not tested here. There are no push notifications in this task.
 
-`localhost` is a secure context for local development. Production needs HTTPS.
-A phone opening this PC's plain HTTP LAN IP does not receive the localhost secure
-context exception: use an HTTPS deployment for actual device installation.
+The site is served over HTTPS, which installation requires. On this PC the browser trusts the certificate once the
+development CA is trusted. A phone would need the same CA, or a real certificate on a real domain.
 
 ## Offline and connection states
 

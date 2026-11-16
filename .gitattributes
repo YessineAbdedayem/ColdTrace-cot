@@ -1,2 +1,3 @@
 gateway-iot/mongo/*.sh text eol=lf
 gateway-iot/scripts/*.sh text eol=lf
+middleware/wildfly/*.sh text eol=lf

@@ -1,8 +1,20 @@
-// Real HTTP checks; optional actions require an explicitly isolated test stack.
+// Real HTTPS checks against the ColdTrace WildFly (middleware/wildfly): one server, one virtual host per name.
+// Optional actions require an explicitly isolated test stack (hosting.compose.yml).
+// The names must resolve to the server (hosts file, or /etc/hosts in CI) and Node must trust the development CA
+// (NODE_EXTRA_CA_CERTS=gateway-iot/certs/ca.crt).
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const base = process.env.FRONT_OFFICE_URL || "http://localhost:3000";
+// The front-office's address; the API and the login server are on api.<domain> and iam.<domain>, same port.
+const front = new URL(process.env.FRONT_OFFICE_URL || "https://www.coldtrace.test");
+const site = front.hostname.replace(/^www\./, "");
+const origin = sub => `${front.protocol}//${sub ? sub + "." : ""}${site}${front.port ? ":" + front.port : ""}`;
+const base = origin("www");
+const API = origin("api");
+const IAM = origin("iam");
+const ADMIN = origin("admin");
+// /api and /ws go to the API's host, /auth to the login server's, everything else to the front-office.
+const hostFor = url => url.startsWith("/api") || url.startsWith("/ws") ? API : url.startsWith("/auth") ? IAM : base;
 const root = path.join(__dirname, "..");
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function waitFor(fn, description) {
@@ -13,7 +25,7 @@ async function waitFor(fn, description) {
   throw new Error("Timed out: " + description);
 }
 async function request(url, token, method = "GET", body) {
-  return fetch(base + url, {method, redirect: "manual",
+  return fetch(hostFor(url) + url, {method, redirect: "manual",
     headers: {...(token ? {Authorization: "Bearer " + token} : {}),
       ...(body ? {"Content-Type": "application/json"} : {})},
     body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(10000)});
@@ -26,7 +38,8 @@ async function request(url, token, method = "GET", body) {
   for (const asset of assets) {
     const response = await request(asset);
     assert.equal(response.status, 200, asset);
-    assert.match(response.headers.get("cache-control"), /no-store/, asset);
+    assert.match(response.headers.get("cache-control"), /no-cache|no-store/, asset);
+    assert.match(response.headers.get("strict-transport-security") || "", /max-age=\d+/, "HSTS on " + asset);
     assert.equal(response.headers.get("x-content-type-options"), "nosniff");
     const local = path.join(root, asset === "/" ? "index.html" : asset.slice(1));
     assert.deepEqual(Buffer.from(await response.arrayBuffer()), fs.readFileSync(local), asset);
@@ -39,9 +52,22 @@ async function request(url, token, method = "GET", body) {
     assert(asset === "/icons/" ? [403, 404].includes(status) : status === 404,
       "No fallback, listing or source exposure: " + asset + " (" + status + ")");
   }
-  // Check virtual-host alias as it will be received from the optional external proxy.
-  assert.equal((await fetch(base + "/", {headers: {Host: "coldtrace.test"}})).status, 200);
-  console.log("PASS static assets, bytes, MIME, headers, virtual-host alias and protected filesystem paths");
+  // The bare domain also lands on the front-office (WildFly's default host); the back-office has its own host.
+  assert.equal((await fetch(origin("") + "/", {signal: AbortSignal.timeout(10000)})).status, 200);
+  const admin = await fetch(ADMIN + "/", {signal: AbortSignal.timeout(10000)});
+  assert.equal(admin.status, 200);
+  assert.match(await admin.text(), /back-office/i);
+  // CORS (course scripts): the front-office may call the API and the login server; a foreign site may not.
+  const preflight = (target, from, method, headers) => fetch(target, {method: "OPTIONS", signal: AbortSignal.timeout(10000),
+    headers: {Origin: from, "Access-Control-Request-Method": method, "Access-Control-Request-Headers": headers}});
+  for (const [target, method, headers] of [[API + "/api/sensors", "GET", "authorization"], [IAM + "/auth/login", "POST", "content-type"]]) {
+    const ok = await preflight(target, base, method, headers);
+    assert.equal(ok.status, 200, "CORS preflight " + target);
+    assert.ok(ok.headers.get("access-control-allow-origin"), "CORS allowed from the front-office: " + target);
+    assert.equal((await preflight(target, "https://evil.example", method, headers)).headers.get("access-control-allow-origin"), null,
+      "CORS refused from a foreign site: " + target);
+  }
+  console.log("PASS static assets, bytes, MIME, headers (HSTS, nosniff, cache), hosts (www, bare, admin), CORS and protected filesystem paths");
   if (process.env.HOSTING_STATIC_ONLY === "1") return;
   await waitFor(async () => (await request("/api/health")).status === 200, "API startup");
   assert.equal((await request("/api/sensors")).status, 401);
@@ -75,7 +101,7 @@ async function request(url, token, method = "GET", body) {
   let socket;
   let eventSeen = false;
   try {
-    socket = new WebSocket(base.replace(/^http/, "ws") + "/ws/alerts?access_token=" + encodeURIComponent(token));
+    socket = new WebSocket(API.replace(/^http/, "ws") + "/ws/alerts?access_token=" + encodeURIComponent(token));
     socket.addEventListener("message", () => { eventSeen = true; });
     await new Promise((resolve, reject) => {
       socket.addEventListener("open", resolve, {once: true});

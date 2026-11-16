@@ -1,11 +1,13 @@
-# Optional live editing: only public files are mounted read-only.
+# Optional live editing of the front-office: only its public files are mounted, read-only, over the copies in the
+# WildFly image (default-host-dev.properties: default.path=/opt/jboss/www/frontoffice).
+# docker compose -f docker-compose.yml -f docker-compose.frontend-dev.yml up -d
 services:
-  front-office:
+  wildfly:
     volumes:
-      - ../frontends/front-office/index.html:/opt/jboss/frontend/index.html:ro
-      - ../frontends/front-office/monitor.css:/opt/jboss/frontend/monitor.css:ro
-      - ../frontends/front-office/monitor.js:/opt/jboss/frontend/monitor.js:ro
-      - ../frontends/front-office/pwa.js:/opt/jboss/frontend/pwa.js:ro
-      - ../frontends/front-office/sw.js:/opt/jboss/frontend/sw.js:ro
-      - ../frontends/front-office/manifest.webmanifest:/opt/jboss/frontend/manifest.webmanifest:ro
-      - ../frontends/front-office/icons:/opt/jboss/frontend/icons:ro
+      - ../frontends/front-office/index.html:/opt/jboss/www/frontoffice/index.html:ro
+      - ../frontends/front-office/monitor.css:/opt/jboss/www/frontoffice/monitor.css:ro
+      - ../frontends/front-office/monitor.js:/opt/jboss/www/frontoffice/monitor.js:ro
+      - ../frontends/front-office/pwa.js:/opt/jboss/www/frontoffice/pwa.js:ro
+      - ../frontends/front-office/sw.js:/opt/jboss/www/frontoffice/sw.js:ro
+      - ../frontends/front-office/manifest.webmanifest:/opt/jboss/www/frontoffice/manifest.webmanifest:ro
+      - ../frontends/front-office/icons:/opt/jboss/www/frontoffice/icons:ro

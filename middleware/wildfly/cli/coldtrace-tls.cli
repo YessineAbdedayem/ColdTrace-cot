@@ -1,0 +1,13 @@
+# ColdTrace: HTTPS with our own certificate instead of WildFly's self-signed "localhost" one.
+# The course scripts assume HTTPS: CORS only accepts https:// origins, and port 80 redirects to https.
+#
+# tls.keystore is a PKCS12 file (certificate + private key for *.<domain>), mounted at runtime, never in the image.
+# Its password is read from the WEB_TLS_PASSWORD environment variable when the server starts ("unset" is only a
+# placeholder so the configuration can be applied at build time, when the variable does not exist yet).
+set keystore=`:resolve-expression(expression=${tls.keystore})`
+batch
+/subsystem=elytron/key-store=coldtrace-tls:add(path=$keystore,type=PKCS12,required=false,credential-reference={clear-text="${env.WEB_TLS_PASSWORD:unset}"})
+/subsystem=elytron/key-manager=coldtrace-tls:add(key-store=coldtrace-tls,credential-reference={clear-text="${env.WEB_TLS_PASSWORD:unset}"})
+/subsystem=elytron/server-ssl-context=coldtrace-tls:add(key-manager=coldtrace-tls,protocols=["TLSv1.3","TLSv1.2"])
+/subsystem=undertow/server=default-server/https-listener=https:write-attribute(name=ssl-context,value=coldtrace-tls)
+run-batch

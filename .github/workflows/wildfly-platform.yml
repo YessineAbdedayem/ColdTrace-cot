@@ -1,0 +1,92 @@
+# ColdTrace platform on WildFly (middleware/wildfly): build the WARs and the image, start ONE WildFly with the course
+# scripts (default-host.cli, add-host.cli, add-api.cli) and the dev properties, then test every virtual host over
+# HTTPS, the API, the login, the WebSocket and the PWA in a real browser. Packages what a deployment needs.
+name: WildFly platform
+on:
+  push:
+    paths: ["frontends/**", "middleware/**", "gateway-iot/**", ".github/workflows/wildfly-platform.yml"]
+  pull_request:
+    paths: ["frontends/**", "middleware/**", "gateway-iot/**", ".github/workflows/wildfly-platform.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  platform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE: docker compose -f frontends/front-office/tests/hosting.compose.yml
+      FRONT_OFFICE_URL: https://www.coldtrace.test:13443
+      PWA_TEST_USER: operateur
+      # Disposable accounts only, never production credentials.
+      PWA_TEST_PASSWORD: Integration-only-123!
+      HOSTING_MUTATIONS: "1"
+      PWA_TEST_ACTIONS: "1"
+      HOSTING_CERTS_DIR: ${{ runner.temp }}/coldtrace-hosting/certs
+      # Node's fetch and WebSocket trust the disposable development CA
+      NODE_EXTRA_CA_CERTS: ${{ runner.temp }}/coldtrace-hosting/certs/ca.crt
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontends/front-office/package-lock.json
+      - name: Unit tests
+        run: |
+          node --test gateway-iot/simulator/fake-sensors.test.js
+          node --test frontends/front-office/tests/sw.test.cjs
+      - name: Disposable certificates (MQTT broker and HTTPS) and the names of the virtual hosts
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/coldtrace-hosting/scripts" "$HOSTING_CERTS_DIR"
+          cp gateway-iot/scripts/gen-certs.sh "$RUNNER_TEMP/coldtrace-hosting/scripts/"
+          bash "$RUNNER_TEMP/coldtrace-hosting/scripts/gen-certs.sh"
+          HOSTING_TLS_PASSWORD="$(openssl rand -hex 16)"
+          echo "::add-mask::$HOSTING_TLS_PASSWORD"
+          echo "HOSTING_TLS_PASSWORD=$HOSTING_TLS_PASSWORD" >> "$GITHUB_ENV"
+          CERTS_DIR="$HOSTING_CERTS_DIR" WEB_TLS_PASSWORD="$HOSTING_TLS_PASSWORD" bash middleware/wildfly/gen-web-cert.sh
+          echo "127.0.0.1 coldtrace.test www.coldtrace.test api.coldtrace.test iam.coldtrace.test admin.coldtrace.test mlflow.coldtrace.test" | sudo tee -a /etc/hosts
+      - name: Build the WARs (with their tests) and the WildFly image, start the isolated stack
+        run: |
+          $COMPOSE config --quiet
+          $COMPOSE up -d --build
+      - name: Hosts, HTTPS, CORS, IAM, roles, MQTT, controls, acknowledgements and WebSocket
+        run: node frontends/front-office/tests/hosting-smoke.cjs
+      - name: Course command on the running server (add-api.cli is idempotent)
+        run: |
+          $COMPOSE exec -T wildfly /opt/jboss/wildfly/bin/jboss-cli.sh --connect --file=/opt/jboss/cli/add-api.cli --properties=/opt/jboss/config/api-dev.properties | tee /tmp/add-api.log
+          grep -q "already exists" /tmp/add-api.log
+      - name: Browser and PWA checks
+        working-directory: frontends/front-office
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          # Chromium on Linux reads trusted CAs from the NSS database
+          sudo apt-get install -y -qq libnss3-tools
+          mkdir -p "$HOME/.pki/nssdb"
+          certutil -d "sql:$HOME/.pki/nssdb" -N --empty-password
+          certutil -d "sql:$HOME/.pki/nssdb" -A -t "C,," -n coldtrace-dev-ca -i "$HOSTING_CERTS_DIR/ca.crt"
+          npm run test:browser
+      - name: Package the deployment (WARs, static frontend, course scripts and properties)
+        run: |
+          mkdir -p deployment
+          $COMPOSE cp wildfly:/opt/jboss/wildfly/standalone/deployments/api-1.0.war deployment/api-1.0.war
+          $COMPOSE cp wildfly:/opt/jboss/wildfly/standalone/deployments/iam-1.0.war deployment/iam-1.0.war
+          tar -czf deployment/frontoffice.tar.gz -C frontends/front-office index.html monitor.css monitor.js pwa.js sw.js manifest.webmanifest icons
+          tar -czf deployment/wildfly-config.tar.gz -C middleware/wildfly cli config deploy.sh
+      - name: Logs
+        if: always()
+        run: |
+          mkdir -p deployment
+          $COMPOSE logs --no-color > deployment/stack.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coldtrace-wildfly-deployment
+          path: |
+            deployment/
+            frontends/front-office/test-results/
+      - name: Stop the isolated stack (no persistent volumes)
+        if: always()
+        run: $COMPOSE down

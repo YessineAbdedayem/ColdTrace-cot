@@ -6,8 +6,8 @@
 // The alert WebSocket needs a login (middleware/iam): give ALERTS_TOKEN, or IAM_USERNAME and IAM_PASSWORD.
 
 const SENSOR = "S02";
-const ALERTS_URL = process.env.ALERTS_URL || "ws://api:8080/ws/alerts";
-const IAM_URL = process.env.IAM_URL || "http://iam:8080";
+const ALERTS_URL = process.env.ALERTS_URL || "ws://api.coldtrace.test:8080/ws/alerts";   // WildFly, internal port
+const IAM_URL = process.env.IAM_URL || "http://iam.coldtrace.test:8080";
 const CONTROL_URL = `http://127.0.0.1:${process.env.SIM_CONTROL_PORT || 4000}`;
 const TARGET_MS = 10000;
 const OPEN_TIMEOUT_MS = 180000;

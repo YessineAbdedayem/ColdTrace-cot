@@ -14,7 +14,7 @@ and its limits. The technical reference (commands, options, files) is [mlops/REA
 7. [Tracking and model registry (MLflow)](#7-tracking-and-model-registry-mlflow)
 8. [Serving: the model API](#8-serving-the-model-api)
 9. [Automation and CI](#9-automation-and-ci)
-10. [Infrastructure: local names and reverse proxy](#10-infrastructure-local-names-and-reverse-proxy)
+10. [Infrastructure: one WildFly, one name per service](#10-infrastructure-one-wildfly-one-name-per-service)
 11. [How to run it](#11-how-to-run-it)
 12. [Where everything is](#12-where-everything-is)
 13. [Limits and next steps](#13-limits-and-next-steps)
@@ -40,9 +40,9 @@ model changes, or when a teammate wants to check that everything still works.
 | Preparation | Per-minute rows, 16 features from the past only, target 10 minutes ahead, time split | `mlops/pipeline/prepare.py` |
 | Training | LightGBM with early stopping; warning margin chosen on validation days | `mlops/pipeline/train.py` |
 | Evaluation | Compared with today's rule and 2 simple baselines, on 8 days the model never saw | results table (section 6) |
-| Tracking | Every run in MLflow: parameters, scores, learning curve, charts, model | http://mlflow.coldtrace.test |
+| Tracking | Every run in MLflow: parameters, scores, learning curve, charts, model | https://mlflow.coldtrace.test |
 | Registry | Each run registers a model version; `@production` moves only to a better model | MLflow, **Models** tab |
-| Serving | An API that loads `@production` by name and reloads it when it changes | http://api.coldtrace.test/ml/docs |
+| Serving | An API that loads `@production` by name and reloads it when it changes | https://api.coldtrace.test/ml/docs |
 | Automation | The whole chain in one command | `docker compose run --rm pipeline run.py` |
 | CI | Tests, full pipeline from scratch, API check and Docker images on every push | GitHub, **Actions** tab |
 | Tests | 52 automated tests (generator 7, pipeline 34, serving 11) | run by CI |
@@ -212,7 +212,7 @@ How to read it:
 
 ## 7. Tracking and model registry (MLflow)
 
-MLflow runs as a container, with its data in a Docker volume. Open it at **http://mlflow.coldtrace.test**.
+MLflow runs as a container, with its data in a Docker volume. Open it at **https://mlflow.coldtrace.test**.
 
 **Every training run is recorded** in the experiment `coldtrace-early-warning`:
 
@@ -258,7 +258,7 @@ The `model-api` container (FastAPI) is the model in production:
 | `GET /ml/forecast/{sensorId}` | Reads the sensor's last 20 minutes from the platform database and predicts the next 10 |
 | `POST /ml/predict` | The same prediction from readings sent in the request |
 
-Interactive docs: **http://api.coldtrace.test/ml/docs**. Select an endpoint, click **Try it out**, then **Execute**.
+Interactive docs: **https://api.coldtrace.test/ml/docs**. Select an endpoint, click **Try it out**, then **Execute**.
 
 **Live check with the simulator.** Thaw on fridge S03, then the service was queried every 15 s:
 
@@ -295,41 +295,43 @@ with `--generate`.
 The CI model is trained on 3 days only, so its scores are lower. CI checks that the **pipeline works**; model quality is
 checked by the 30-day run and by the promotion rule.
 
-## 10. Infrastructure: local names and reverse proxy
+## 10. Infrastructure: one WildFly, one name per service
 
-Each service has its own name instead of `localhost:port`, as in a real deployment:
+Each service has its own name instead of `localhost:port`, as in a real deployment, all served over HTTPS by **one
+WildFly** ([middleware/wildfly](../middleware/wildfly/README.md)):
 
 | Address | Service |
 |---|---|
-| http://coldtrace.test | the monitor (front-office) |
-| http://api.coldtrace.test | the REST API, and the model under `/ml/` |
-| http://mlflow.coldtrace.test | MLflow |
-| http://iam.coldtrace.test | the login server (users and roles; the API and the monitor need a login, the model API and MLflow do not yet) |
+| https://coldtrace.test | the monitor (front-office) |
+| https://api.coldtrace.test | the REST API, and the model under `/ml/` |
+| https://mlflow.coldtrace.test | MLflow |
+| https://iam.coldtrace.test | the login server (users and roles; the API and the monitor need a login, the model API and MLflow do not yet) |
 
 It has two parts:
 
 - **The hosts file** (`C:\Windows\System32\drivers\etc\hosts`) points these names to the PC itself (127.0.0.1).
-- **A reverse proxy** ([middleware/proxy](../middleware/proxy/README.md)), one WildFly/Undertow container on port 80, reads the
-  requested name and forwards the request to the right container.
+- **The WildFly** gives each name a virtual host, with the course's scripts (`default-host.cli`, `add-host.cli`,
+  `add-api.cli`). The back-office is at `admin.coldtrace.test`. The two Python services of the MLOps part (the model
+  API and MLflow) are not WildFly applications: WildFly forwards `api.coldtrace.test/ml/` and `mlflow.coldtrace.test`
+  to their containers (reverse proxy).
 
 ## 11. How to run it
 
 Once per PC:
-- add the names to the hosts file ([middleware/proxy/README.md](../middleware/proxy/README.md));
+- add the names to the hosts file and trust the development CA ([middleware/wildfly/README.md](../middleware/wildfly/README.md)), or simply run `.\start`;
 - create `mlops/.env` and the MongoDB user ([mlops/README.md](../mlops/README.md)).
 
 Then:
 
 ```powershell
-cd C:\Users\MSI\Desktop\ColdTrace-cot\gateway-iot;  docker compose up -d          # the platform
-cd ..\middleware\proxy;                             docker compose up -d          # the names
-cd ..\..\mlops;                                     docker compose up -d mlflow model-api
+cd C:\Users\MSI\Desktop\ColdTrace-cot\gateway-iot;  docker compose up -d          # the platform, with the WildFly
+cd ..\mlops;                                       docker compose up -d mlflow model-api
 docker compose run --rm pipeline run.py --generate                                # data + training
 ```
 
 Check:
-- http://mlflow.coldtrace.test shows the runs;
-- http://api.coldtrace.test/ml/health answers `"status": "ok"`.
+- https://mlflow.coldtrace.test shows the runs;
+- https://api.coldtrace.test/ml/health answers `"status": "ok"`.
 
 ## 12. Where everything is
 
@@ -341,7 +343,7 @@ Check:
 | `mlops/ci/` | The model API check used by CI |
 | `mlops/docker-compose.yml` | MLflow, model API, pipeline, generator, MongoDB user setup |
 | `mlops/data/` | Generated files: datasets, model, charts. Ignored by git, recreated by the pipeline. |
-| `middleware/proxy/` | The reverse proxy |
+| `middleware/wildfly/` | The WildFly that serves every name (it also forwards to MLflow and the model API) |
 | `.github/workflows/mlops.yml` | The CI workflow |
 | `docs/MLOPS.md`, `docs/img/` | This document and its pictures |
 
