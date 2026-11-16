@@ -1,105 +1,88 @@
-# Attribution
+# 📜 Déclaration d'Attribution et d'Intégrité Académique
+### Module : Cloud of Things (COT) · Année 2026/2027 · SUP'COM
 
-This file states who did what in ColdTrace, which AI tools were used and how, and which third-party software, fonts
-and documents the project relies on.
+Ce document est un *livrable obligatoire* devant être complété et mis à jour à chaque sprint par l'équipe. Il vise à cartographier de manière transparente l'origine du code, des architectures et l'usage des outils d'assistance (IA, bibliothèques tiers, codes d'archive).
 
-**Team:** Khalil Hedhili, Oussema Kard, Yessine Abdedayem.
+---
 
-## 1. Contributions
+## 👥 1. Identification de l'Équipe
+*   *Projet (Nom) :* ColdTrace : supervision de la chaîne du froid
+*   *Équipe (Numéro) :* ___
+*   *Membres :*
+    *   Membre 1 (Prénom, Nom) : Khalil Hedhili
+    *   Membre 2 (Prénom, Nom) : Oussema Kard
+    *   Membre 3 (Prénom, Nom) : Yessine Abdedayem
 
-The table is built from the git history (`git log`) and [middleware/api/RECAP.md](middleware/api/RECAP.md).
+---
 
-| Member | Main contributions | Main folders |
-|---|---|---|
-| **Khalil Hedhili** | **IoT gateway:** Node-RED flow, offline buffering and replay, MQTT brokers, v1 message format. **In the Java API:** v1 message contract, gateway status, the rule-based alert engine and its WebSocket, Compose integration, end-to-end alert test; early warnings from the model (`early_warning` incidents and their rules). **MLOps, after the pipeline:** live monitoring of the model, drift detection, automatic retraining with live data. **IAM:** the login server with Jakarta Security (`middleware/iam`), and the login on the API, the WebSocket and the front-office. **Tooling:** `start.ps1` (one-command start) | `gateway-iot/`, `middleware/api/` (alerts, early warnings, security), `middleware/iam/`, `mlops/` (monitoring, drift, retraining), `frontends/front-office/` (early warnings, login) |
-| **Oussema Kard** | **Java API skeleton:** Maven/WildFly project, Docker image, MongoDB access, MQTT/MQTTS listener; door-open and silent-sensor incidents; REST endpoints (sensors, incidents, gateways, simulator faults); the first monitor page. **Infrastructure:** local `*.coldtrace.test` names and the reverse proxy. **The whole MLOps pipeline:** synthetic data generator, preparation, training and evaluation, MLflow tracking and registry, model API, one-command pipeline, GitHub Actions CI. Documentation (`docs/MLOPS.md`, READMEs, recap) | `middleware/api/`, `middleware/proxy/`, `mlops/`, `.github/`, `docs/` |
-| **Yessine Abdedayem** | **Local dev stack:** MongoDB init, TLS certificates, broker accounts and ACL, multi-site simulator with a fault API. **Incidents:** acknowledgement endpoint and workflow. **Front-office:** turned the monitor into an installable PWA with Nginx, service worker and tests. **Repository:** reorganised into `docs/`, `frontends/`, `middleware/` | `gateway-iot/`, `frontends/front-office/`, `middleware/api/` (acknowledgement) |
+## 🧠 2. Usage des Assistants de Génération (IA)
+Cochez l'option qui correspond à votre réalité et détaillez le périmètre.
 
-The whole team shares the specification (`docs/cahier_des_charges_coldtrace_v3.tex`) and the root README.
+*   [ ] *Option A :* Aucun outil de génération de code par IA n'a été utilisé.
+*   [ ] *Option B :* Utilisation modérée (Aide au débogage, génération de fonctions isolées, documentation).
+*   [x] *Option C :* Utilisation intensive (Génération de structures de dossiers, squelettes d'API complets, scripts de déploiement).
 
-## 2. Use of AI tools
+**Périmètre :**
 
-AI tools were used as programming assistants. The team members chose what to build, made the design decisions, ran
-and checked the results, and are responsible for the code they committed.
+- **Oussema Kard, avec Claude Code :** squelette de l'API, endpoints REST, page de supervision, proxy, pipeline MLOps, scripts Docker et documentation.
+- **Khalil Hedhili, avec Claude Code :** alertes précoces dans l'API et le moniteur, surveillance du modèle, détection de dérive, réentraînement automatique, serveur IAM et connexion, script de démarrage `start.ps1`.
+- **Le rôle des membres :** dans les deux cas, le membre a défini les besoins, fait les choix de conception, lancé et vérifié chaque étape (tests, conteneurs, démonstrations) et relu le code.
+- **Yessine Abdedayem, avec GitHub Copilot :** assistance sur le simulateur, la stack de développement et l'acquittement des incidents.
 
-| Tool | Used by | Declared in git | What it was used for |
-|---|---|---|---|
-| **Claude Code** (Anthropic, model Claude Opus 5.5) | Oussema | 33 commits carry `Co-Authored-By: Claude Opus 5.5` | Writing and debugging code in Oussema's parts (Java API skeleton and incidents, REST endpoints, monitor page, proxy, MLOps pipeline), writing tests and documentation, running and checking the Docker stack |
-| **Claude Code** (Anthropic, model Claude Opus 5.5) | Khalil | commits from 16 Nov 2026 carry `Co-Authored-By: Claude Opus 5.5` | Early warnings in the API and the monitor, model monitoring, drift detection, automatic retraining, the IAM and the login, `start.ps1`; tests, live tests on the Docker stack, documentation |
-| **GitHub Copilot** | Yessine | 5 commits carry `Co-authored-by: Copilot` | Simulator and dev stack, incident acknowledgement endpoint and workflow |
+### 📝 Journal des invites (Prompts) notables et composants générés par IA :
 
-How the work was checked:
+| Composant / Module | Outil utilisé (ChatGPT/Claude/Copilot...) | Description du prompt ou du rôle confié à l'IA |
+| :--- | :--- | :--- |
+| Squelette de l'API (`middleware/api`) | Claude Code (Claude Opus 5.5) | Projet Maven WAR Jakarta EE 11 / Java 21 sur WildFly, Dockerfile multi-étapes, connexion MongoDB par variables d'environnement, écouteur MQTT/MQTTS qui enregistre les mesures, sans framework supplémentaire et sans secret dans le code |
+| Contrat de messages et incidents (`middleware/api`) | Claude Code (Claude Opus 5.5) | Alignement de l'API sur le contrat de l'équipe (MQTTS, identifiants lus dans le topic) ; ajout des incidents « porte ouverte » et « capteur silencieux » au moteur d'alertes |
+| Endpoints REST (`middleware/api`) | Claude Code (Claude Opus 5.5) | `GET /api/sensors`, `/api/incidents`, `/api/gateways` et proxy vers l'API de pannes du simulateur, pour tester le système sans terminal |
+| Page de supervision (première version du front-office) | Claude Code (Claude Opus 5.5) | Interface de test au design « conteneur frigorifique » : tuiles capteurs, courbes, boutons de pannes, journal des incidents en direct |
+| Proxy inverse (`middleware/proxy`) | Claude Code (Claude Opus 5.5) | Conteneur Nginx qui sert `coldtrace.test`, `api.coldtrace.test` et `mlflow.coldtrace.test` via le fichier hosts |
+| Générateur de données (`mlops/generator`) | Claude Code (Claude Opus 5.5) | 30 jours de mesures réalistes avec pannes injectées et journalisées, faute d'incidents réels en nombre suffisant |
+| Pipeline d'entraînement (`mlops/pipeline`) | Claude Code (Claude Opus 5.5) | Préparation des variables, modèle LightGBM d'alerte précoce, évaluation contre les règles actuelles, suivi MLflow et règle de promotion, pipeline en une commande |
+| API du modèle (`mlops/serving`) | Claude Code (Claude Opus 5.5) | Service FastAPI qui charge le modèle `@production` depuis MLflow et prédit sur les mesures en direct |
+| CI (`.github/workflows/mlops.yml`) | Claude Code (Claude Opus 5.5) | Tests, pipeline complet sur une base vierge, vérification de l'API du modèle et construction des images Docker à chaque push |
+| Documentation (`docs/MLOPS.md`, README, `RECAP.md`) | Claude Code (Claude Opus 5.5) | Rédaction des guides de test, du récapitulatif, de la documentation MLOps et de son schéma |
+| Alertes précoces (`middleware/api`, front-office) | Claude Code (Claude Opus 5.5) | Incidents `early_warning` ouverts à partir des prévisions du modèle, et leur affichage dans le moniteur |
+| Surveillance, dérive et réentraînement (`mlops/`) | Claude Code (Claude Opus 5.5) | Journal des prédictions comparées à la réalité, détection de dérive des données, réentraînement automatique avec les données en direct |
+| Serveur IAM et connexion (`middleware/iam`, API, WebSocket, front-office) | Claude Code (Claude Opus 5.5) | Serveur de connexion avec Jakarta Security et jetons, connexion obligatoire sur l'API, le WebSocket et le moniteur |
+| Démarrage en une commande (`start.ps1`) | Claude Code (Claude Opus 5.5) | Script qui démarre toute la plateforme |
+| Simulateur multi-sites et stack de développement (`gateway-iot`) | GitHub Copilot | Assistance pendant l'écriture du simulateur contrôlable et de la stack MongoDB locale |
+| Acquittement des incidents (`middleware/api`, front-office) | GitHub Copilot | Assistance pendant l'écriture de l'endpoint d'acquittement et de son workflow dans l'interface |
 
-- **Automated tests:**
-  - **Java:** JUnit tests in `middleware/api` (49) and `middleware/iam` (17).
-  - **MLOps:** 52 Python tests (generator, pipeline, serving).
-  - **Front-office:** Node tests.
-- **Real containers:** the platform and the MLOps pipeline were run end to end in Docker, with the simulator.
-  - **The early warnings** were checked on a realistic slow failure, published by hand on the site broker.
-  - **The IAM** passed a live test of 24 checks (logins, roles, forged token, lockout, last-admin protection).
-  - **The login** in the front-office was checked by hand.
-- **CI:** GitHub Actions replays the MLOps pipeline from scratch on every push to `mlops/`.
-- **Model results:** measured on held-out test days that the model never saw during training (`docs/MLOPS.md`, section 6).
+---
 
-To list the AI-assisted commits:
+## 📚 3. Emprunts, Squelettes de Cours & Plagiat
+Précisez si vous avez utilisé une base de code préexistante.
 
-```bash
-git log --grep="Co-Authored-By: Claude" --oneline
-git log --grep="Co-authored-by: Copilot" --oneline
-```
+*   *Code de départ enseignant / squelette du cours :*
+    *   [ ] Oui (indiquer quels modules : ______________________)
+    *   [ ] Non
+*   *Réutilisation d'anciens projets (Années précédentes / GitHub externes) :*
+    *   [ ] Oui (Lien du dépôt d'origine : https://github.com...)
+    *   [ ] Non
+    *   Si Oui, listez les fichiers ou concepts importés directement : ______________________
 
-Each member should complete this section if they used an AI tool that is not recorded in a commit.
+Le projet s'appuie sur des logiciels open source utilisés tels quels, sans modification : Jakarta EE, WildFly, MongoDB, Eclipse Mosquitto, Node-RED, Eclipse Paho, Nginx, LightGBM, MLflow, FastAPI, pandas. Il utilise aussi les polices Big Shoulders et Martian Mono (SIL Open Font License).
 
-## 3. Data and documents
+---
 
-| Item | Origin |
-|---|---|
-| Sensor readings | **Simulated only.** The live readings come from the project's simulator (`gateway-iot/simulator`). The MLOps training data is generated by the project's own generator (`mlops/generator`). No external or personal dataset is used. |
-| `docs/cahier_des_charges_coldtrace_v3.tex` | Written by the team |
-| `docs/MESSAGE-FORMAT.md`, `docs/Gateway-explained.pdf` | Written by Khalil Hedhili |
-| `docs/MLOPS.md` and `docs/img/` | Written by Oussema Kard. The charts are produced by the pipeline (`mlops/pipeline/train.py`); the diagram was drawn for this document. Status rows and "Limits and next steps" updated by Khalil Hedhili (monitoring, drift, retraining). |
-| `docs/Cloud_of_Things.pdf` | Project document added to the repository with the specification |
+## 🛠️ 4. Répartition Réelle de l'Écriture du Code
+Indiquez la provenance réelle (en %) des lignes de code actuellement sur votre branche principale.
 
-## 4. Third-party software
+| Module / Composant | % Écrit à la main par l'équipe | % Généré par IA | % Emprunté / Réutilisé |
+| :--- | :---: | :---: | :---: |
+| *Passerelle IoT / Node-RED / Edge* | ______ % | ______ % | ______ % |
+| *Backend / API REST / Middleware* | ______ % | ______ % | ______ % |
+| *Sécurité (IAM / Keycloak / mTLS)* | ______ % | ______ % | ______ % |
+| *Frontend / PWA* | ______ % | ______ % | ______ % |
+| *Scripts d'Infra / Déploiement* | ______ % | ______ % | ______ % |
+| *MLOps (pipeline, MLflow, API du modèle, CI, surveillance)* | 0 % | 100 % | 0 % |
 
-ColdTrace is built on open-source software, used as-is and not modified. Licences are those published by each project.
+---
 
-**Platform**
+## ✍️ 5. Engagement sur l'Honneur
+En validant ce fichier sur notre dépôt GitHub, nous certifions sur l'honneur que les déclarations ci-dessus sont exactes, sincères et reflètent fidèlement notre processus de développement. Nous sommes conscients que la falsification de ce document ou la non-maîtrise technique du code déclaré comme "écrit par l'équipe" lors des soutenances entraînera une *pénalité immédiate et sévère sur la note globale*.
 
-| Software | Use | Licence |
-|---|---|---|
-| Jakarta EE 11 APIs | Java API and login server (CDI, JAX-RS, JSON-B/JSON-P, WebSocket, Security) | EPL 2.0 |
-| WildFly 42 | Application server for the Java API and the login server | see wildfly.org |
-| MongoDB Java driver 5.14 | Database access from Java | Apache 2.0 |
-| Eclipse Paho MQTT client 1.2.5 | MQTT/MQTTS client in Java | EPL 2.0 / EDL 1.0 |
-| JUnit 5 | Java tests | EPL 2.0 |
-| Eclipse Temurin (OpenJDK 21), Maven 3.9 | Java build | GPL 2.0 with Classpath Exception / Apache 2.0 |
-| MongoDB 7 | Database | SSPL |
-| Eclipse Mosquitto 2.0 | MQTT brokers (site and cloud) | EPL 2.0 / EDL 1.0 |
-| Node-RED 4.1 | IoT gateway flow | Apache 2.0 |
-| Node.js 22 | Simulator | MIT |
-| Nginx | Front-office server and reverse proxy | BSD 2-Clause |
-| Playwright | Front-office browser tests (development only) | Apache 2.0 |
-
-**MLOps**
-
-| Software | Use | Licence |
-|---|---|---|
-| Python 3.12 | Generator, pipeline, model API | PSF |
-| pandas, NumPy, PyArrow | Data preparation | BSD 3-Clause / BSD 3-Clause / Apache 2.0 |
-| LightGBM | The early-warning model | MIT |
-| scikit-learn | Installed with the pipeline | BSD 3-Clause |
-| Matplotlib | Charts | Matplotlib (PSF-based) |
-| MLflow 2.18 | Experiment tracking and model registry | Apache 2.0 |
-| FastAPI, Uvicorn, Pydantic | Model API | MIT / BSD 3-Clause / MIT |
-| PyMongo | Database access from Python | Apache 2.0 |
-| pytest | Python tests | MIT |
-
-**Fonts** (front-office, loaded from Google Fonts)
-
-| Font | Licence |
-|---|---|
-| Big Shoulders Stencil Display, Big Shoulders Text | SIL Open Font License 1.1 |
-| Martian Mono | SIL Open Font License 1.1 |
-
-**Services:** GitHub (repository and Actions CI).
+*   [ ] *Lu et approuvé par l'ensemble des membres de l'équipe.*
+*   *Date de dernière mise à jour :* 16 / 11 / 2026
