@@ -102,7 +102,7 @@ logbook.
 
 The dedicated frontend WildFly/Undertow serves static files and proxies `/api/` and
 `/ws/alerts` to `api:8080`, and `/auth/` to `iam:8080`, on the Compose network.
-The API WAR remains unchanged; see [migration and rollback](../../docs/WILDFLY-FRONTEND-MIGRATION.md).
+The API WAR remains unchanged; see [the local start guide](../../docs/LANCEMENT-LOCAL.md).
 The browser uses its own frontend origin, so no backend CORS relaxation is required. The old API `/monitor/`
 route is removed; the backend root is now an API landing page.
 

@@ -4,10 +4,9 @@ The existing monitor is now an installable Progressive Web Application with real
 backend data, simulator controls and incident acknowledgement. It retains the dark
 industrial interface and its three sites/ten sensors. It is served independently
 of the API WAR, in a dedicated WildFly 42/Undertow container, with no frontend
-framework or runtime npm dependency. The original Nginx image is retained for rollback.
+framework or runtime npm dependency. The project no longer uses Nginx.
 
-See [the migration report](../../docs/WILDFLY-FRONTEND-MIGRATION.md) for CLI properties,
-production requirements, validation and exact rollback commands.
+See [the local start guide](../../docs/LANCEMENT-LOCAL.md) for CLI properties and validation.
 
 **Early warnings** from the MLOps model (`early_warning` incidents, see
 [middleware/api/README.md](../../middleware/api/README.md)) appear in yellow:

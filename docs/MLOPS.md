@@ -309,7 +309,7 @@ Each service has its own name instead of `localhost:port`, as in a real deployme
 It has two parts:
 
 - **The hosts file** (`C:\Windows\System32\drivers\etc\hosts`) points these names to the PC itself (127.0.0.1).
-- **A reverse proxy** ([middleware/proxy](../middleware/proxy/README.md)), one Nginx container on port 80, reads the
+- **A reverse proxy** ([middleware/proxy](../middleware/proxy/README.md)), one WildFly/Undertow container on port 80, reads the
   requested name and forwards the request to the right container.
 
 ## 11. How to run it

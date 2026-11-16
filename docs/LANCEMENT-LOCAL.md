@@ -63,9 +63,9 @@ Seuls les fichiers publics sont montés. Ne pas monter la racine du dépôt.
 Une modification du contenu du shell exige toujours de changer la version du cache
 dans `sw.js`. La migration de serveur seule ne change aucun fichier du shell.
 
-## Arrêt et retour arrière
+## Arrêt
 
 `docker compose -f gateway-iot/docker-compose.yml stop` conserve les données.
 
-Les commandes précises de retour à Nginx et les résultats de tests figurent dans
-[WILDFLY-FRONTEND-MIGRATION.md](WILDFLY-FRONTEND-MIGRATION.md).
+Le front-office et le proxy des noms `*.coldtrace.test` tournent tous deux sur WildFly/Undertow ;
+le projet n'utilise plus Nginx.

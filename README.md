@@ -23,10 +23,9 @@ Deux applications clientes sont prévues :
 Le Front Office est désormais servi par **WildFly 42 / Undertow** dans le service
 `front-office`, à la même adresse locale `http://localhost:3000` par défaut.
 Les routes REST, IAM et WebSocket restent sur la même origine. Le proxy extérieur
-reste optionnel pour les noms locaux ; il ne sert aucun fichier de la PWA.
-Voir [le lancement local](docs/LANCEMENT-LOCAL.md) et
-[le rapport de migration](docs/WILDFLY-FRONTEND-MIGRATION.md) pour les propriétés CLI,
-les tests, les limites HTTPS et le retour à Nginx.
+(lui aussi sur WildFly/Undertow) reste optionnel pour les noms locaux ; il ne sert aucun fichier de la PWA.
+Le projet n'utilise plus Nginx. Voir [le lancement local](docs/LANCEMENT-LOCAL.md) pour les propriétés CLI,
+les tests et les limites HTTPS.
 
 | Couche | Technologies |
 |---|---|
@@ -49,7 +48,7 @@ les tests, les limites HTTPS et le retour à Nginx.
 │   ├── api/                       # Projet Maven existant : ingestion, alertes, REST et WebSocket
 │   ├── core/                      # Réservé ; aucun module Maven pour le moment
 │   ├── iam/                       # Serveur de connexion (Jakarta Security) : utilisateurs, rôles, jetons signés
-│   └── proxy/                     # Proxy inverse Nginx : coldtrace.test, api.coldtrace.test, mlflow.coldtrace.test
+│   └── proxy/                     # Proxy inverse WildFly/Undertow : coldtrace.test, api.coldtrace.test, iam.coldtrace.test, mlflow.coldtrace.test
 ├── gateway-iot/                    # Node-RED, brokers MQTT, simulateur et stack Docker Compose
 ├── mlops/                         # Pipeline MLOps : données, entraînement, MLflow, API du modèle, surveillance, CI
 ├── start.ps1, start.cmd           # Démarrage de tout le projet en une commande (Windows)

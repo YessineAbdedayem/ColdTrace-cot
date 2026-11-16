@@ -1,0 +1,53 @@
+# ColdTrace reverse proxy (dev) on WildFly/Undertow: one name per service, no port numbers.
+# Applied once, when the image is built (see ../Dockerfile), with --properties=proxy.properties.
+#
+#   coldtrace.test         -> front-office:8080   (monitor; it forwards /api, /auth and /ws itself)
+#   api.coldtrace.test     -> api:8080            (REST API and the /ws/alerts WebSocket)
+#   api.coldtrace.test/ml  -> model-api:8000      (early-warning model, the /ml prefix is removed)
+#   iam.coldtrace.test     -> iam:8080            (login server)
+#   mlflow.coldtrace.test  -> mlflow:5000         (experiment tracking and model registry)
+#   any other name         -> a page listing the names above
+#
+# Each target is an outbound socket binding (host and port of a container on the Compose network) and a
+# reverse-proxy handler; each name is an Undertow virtual host whose locations point to those handlers.
+
+batch
+
+# --- Targets ---------------------------------------------------------------------------------------------------
+/socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=front-office:add(host="${front.host}",port=${front.port})
+/socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=api:add(host="${api.host}",port=${api.port})
+/socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=model-api:add(host="${model.host}",port=${model.port})
+/socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=iam:add(host="${iam.host}",port=${iam.port})
+/socket-binding-group=standard-sockets/remote-destination-outbound-socket-binding=mlflow:add(host="${mlflow.host}",port=${mlflow.port})
+
+# max-retries=0: a request is never sent twice to a backend (a POST must not be replayed).
+/subsystem=undertow/configuration=handler/reverse-proxy=to-front-office:add(max-retries=0)
+/subsystem=undertow/configuration=handler/reverse-proxy=to-front-office/host=backend:add(outbound-socket-binding=front-office,scheme=http,path="/")
+/subsystem=undertow/configuration=handler/reverse-proxy=to-api:add(max-retries=0)
+/subsystem=undertow/configuration=handler/reverse-proxy=to-api/host=backend:add(outbound-socket-binding=api,scheme=http,path="/")
+/subsystem=undertow/configuration=handler/reverse-proxy=to-model-api:add(max-retries=0)
+/subsystem=undertow/configuration=handler/reverse-proxy=to-model-api/host=backend:add(outbound-socket-binding=model-api,scheme=http,path="/")
+/subsystem=undertow/configuration=handler/reverse-proxy=to-iam:add(max-retries=0)
+/subsystem=undertow/configuration=handler/reverse-proxy=to-iam/host=backend:add(outbound-socket-binding=iam,scheme=http,path="/")
+/subsystem=undertow/configuration=handler/reverse-proxy=to-mlflow:add(max-retries=0)
+/subsystem=undertow/configuration=handler/reverse-proxy=to-mlflow/host=backend:add(outbound-socket-binding=mlflow,scheme=http,path="/")
+
+# --- Names -----------------------------------------------------------------------------------------------------
+/subsystem=undertow/server=default-server/host=coldtrace:add(alias=["coldtrace.test"])
+/subsystem=undertow/server=default-server/host=coldtrace/location=\/:add(handler=to-front-office)
+
+/subsystem=undertow/server=default-server/host=api:add(alias=["api.coldtrace.test"])
+/subsystem=undertow/server=default-server/host=api/location=\/:add(handler=to-api)
+/subsystem=undertow/server=default-server/host=api/location=\/ml:add(handler=to-model-api)
+
+/subsystem=undertow/server=default-server/host=iam:add(alias=["iam.coldtrace.test"])
+/subsystem=undertow/server=default-server/host=iam/location=\/:add(handler=to-iam)
+
+/subsystem=undertow/server=default-server/host=mlflow:add(alias=["mlflow.coldtrace.test"])
+/subsystem=undertow/server=default-server/host=mlflow/location=\/:add(handler=to-mlflow)
+
+# Any other name lands on default-host: show a page that lists the names, instead of WildFly's welcome page.
+/subsystem=undertow/configuration=handler/file=welcome-content:write-attribute(name=path,value="${welcome.path}")
+/subsystem=undertow/configuration=handler/file=welcome-content:write-attribute(name=directory-listing,value=false)
+
+run-batch

@@ -183,7 +183,7 @@ $hostsFile = "$env:WINDIR\System32\drivers\etc\hosts"
 $hasNames = (Test-Path $hostsFile) -and (Select-String -Path $hostsFile -Pattern "coldtrace\.test" -Quiet)
 if ($hasNames) {
     Step "Reverse proxy (coldtrace.test names)"
-    Compose $Proxy @("up", "-d")
+    Compose $Proxy @("up", "-d", "--build")
 }
 
 # --- 3. MLOps -----------------------------------------------------------------------------------------------------

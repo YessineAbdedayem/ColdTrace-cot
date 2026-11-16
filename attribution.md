@@ -37,7 +37,7 @@ Cochez l'option qui correspond à votre réalité et détaillez le périmètre.
 | Contrat de messages et incidents (`middleware/api`) | Claude Code (Claude Opus 5.5) | Alignement de l'API sur le contrat de l'équipe (MQTTS, identifiants lus dans le topic) ; ajout des incidents « porte ouverte » et « capteur silencieux » au moteur d'alertes |
 | Endpoints REST (`middleware/api`) | Claude Code (Claude Opus 5.5) | `GET /api/sensors`, `/api/incidents`, `/api/gateways` et proxy vers l'API de pannes du simulateur, pour tester le système sans terminal |
 | Page de supervision (première version du front-office) | Claude Code (Claude Opus 5.5) | Interface de test au design « conteneur frigorifique » : tuiles capteurs, courbes, boutons de pannes, journal des incidents en direct |
-| Proxy inverse (`middleware/proxy`) | Claude Code (Claude Opus 5.5) | Conteneur Nginx qui sert `coldtrace.test`, `api.coldtrace.test` et `mlflow.coldtrace.test` via le fichier hosts |
+| Proxy inverse (`middleware/proxy`) | Claude Code (Claude Opus 5.5) | Proxy WildFly/Undertow (hôtes virtuels et handlers reverse-proxy) qui sert `coldtrace.test`, `api.coldtrace.test`, `iam.coldtrace.test` et `mlflow.coldtrace.test` via le fichier hosts |
 | Générateur de données (`mlops/generator`) | Claude Code (Claude Opus 5.5) | 30 jours de mesures réalistes avec pannes injectées et journalisées, faute d'incidents réels en nombre suffisant |
 | Pipeline d'entraînement (`mlops/pipeline`) | Claude Code (Claude Opus 5.5) | Préparation des variables, modèle LightGBM d'alerte précoce, évaluation contre les règles actuelles, suivi MLflow et règle de promotion, pipeline en une commande |
 | API du modèle (`mlops/serving`) | Claude Code (Claude Opus 5.5) | Service FastAPI qui charge le modèle `@production` depuis MLflow et prédit sur les mesures en direct |
@@ -63,7 +63,7 @@ Précisez si vous avez utilisé une base de code préexistante.
     *   [ ] Non
     *   Si Oui, listez les fichiers ou concepts importés directement : ______________________
 
-Le projet s'appuie sur des logiciels open source utilisés tels quels, sans modification : Jakarta EE, WildFly, MongoDB, Eclipse Mosquitto, Node-RED, Eclipse Paho, Nginx, LightGBM, MLflow, FastAPI, pandas. Il utilise aussi les polices Big Shoulders et Martian Mono (SIL Open Font License).
+Le projet s'appuie sur des logiciels open source utilisés tels quels, sans modification : Jakarta EE, WildFly, MongoDB, Eclipse Mosquitto, Node-RED, Eclipse Paho, LightGBM, MLflow, FastAPI, pandas. Il utilise aussi les polices Big Shoulders et Martian Mono (SIL Open Font License).
 
 ---
 
