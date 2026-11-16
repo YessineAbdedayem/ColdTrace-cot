@@ -4,6 +4,7 @@ certs/*
 !certs/.gitkeep
 # Files Node-RED writes at runtime
 node-red/.config*.json
+node-red/.config*.json.backup
 node-red/.flows*.backup
 # (flows_cred.json IS committed: it only holds ${ENV} references, no passwords)
 node-red/context/

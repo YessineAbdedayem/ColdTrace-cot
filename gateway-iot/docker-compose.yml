@@ -132,6 +132,10 @@ services:
       MQTT_CA_PATH: /certs/ca.crt
       # Dev only: lets the Front Office trigger simulator faults through the API
       SIM_CONTROL_URL: http://simulator:${SIM_CONTROL_PORT:-4000}
+      # Early warnings from the model API of mlops/ (optional: started from mlops/, same network).
+      # Set ML_FORECAST_URL= (empty) in .env to turn them off.
+      ML_FORECAST_URL: ${ML_FORECAST_URL-http://model-api:8000}
+      ML_POLL_SECONDS: ${ML_POLL_SECONDS:-30}
     volumes:
       - { type: bind, source: ./certs/ca.crt, target: /certs/ca.crt, read_only: true, bind: { create_host_path: false } }
     restart: unless-stopped
