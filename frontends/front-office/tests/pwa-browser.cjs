@@ -200,7 +200,7 @@ function pass(name) { checks.push(name); console.log("PASS: " + name); }
     let content = fs.readFileSync(filename);
     // This origin tests only pwa.js and sw.js: it has no IAM or operational backend.
     // Leave the login overlay hidden instead of starting monitor.js against a fake API.
-    if (route === "/" || route === "/index.html") content = Buffer.from(content.toString().replace('<script src="monitor.js"></script>', ""));
+    if (route === "/" || route === "/index.html") content = Buffer.from(content.toString().replace(/<script src="monitor\.js"( defer)?><\/script>/, ""));
     if (route === "/sw.js") content = Buffer.from(content.toString().replace(/CACHE_PREFIX \+ "[^"]+"/, 'CACHE_PREFIX + "' + version + '"'));
     if (route === "/monitor.css") content = Buffer.concat([content, Buffer.from("\n/* " + version + " */")]);
     response.writeHead(200, { "Content-Type": types[path.extname(filename)] || "application/octet-stream", "Cache-Control": "no-store" });

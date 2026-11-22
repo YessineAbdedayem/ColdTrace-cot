@@ -14,6 +14,14 @@
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
   <link rel="stylesheet" href="monitor.css">
+  <!-- In the head, as asked: "defer" downloads them right away but runs them once the page is parsed, in this order
+       (reports.js needs Chart.js and monitor.js), so they find the elements they use (login form, tiles...).
+       Without it, they would run before <body>. -->
+  <script src="vendor/chart.umd.min.js" defer></script>
+  <script src="monitor.js" defer></script>
+  <script src="reports.js" defer></script>
+  <script src="notify.js" defer></script>
+  <script src="pwa.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to monitoring</a>
@@ -192,11 +200,5 @@ docker compose start cloud-broker</pre>
       </div>
     </article>
   </template>
-
-  <script src="vendor/chart.umd.min.js"></script>
-  <script src="monitor.js"></script>
-  <script src="reports.js"></script>
-  <script src="notify.js"></script>
-  <script src="pwa.js"></script>
 </body>
 </html>

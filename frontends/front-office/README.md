@@ -45,7 +45,9 @@ permission, subscribes the browser and sends a test notification. New incidents 
 even when the app is closed; a click opens the logbook. The subscription stays when the session ends (a driver keeps
 receiving alerts) and is re-linked to whoever signs in on the device. Needs HTTPS and the service worker.
 
-The shell cache is `coldtrace-shell-phase-b-1`. Only same-origin shell files are cached: the API and the login server, on
+The shell cache is `coldtrace-shell-phase-b-2`. The scripts (`vendor/chart.umd.min.js`, `monitor.js`, `reports.js`,
+`notify.js`, `pwa.js`) are loaded from `<head>` with `defer`: downloaded at once, run in this order after the page is
+parsed. Only same-origin shell files are cached: the API and the login server, on
 other hosts, never are.
 
 ## Run
