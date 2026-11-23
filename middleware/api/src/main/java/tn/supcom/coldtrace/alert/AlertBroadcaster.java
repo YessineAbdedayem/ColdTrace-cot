@@ -2,22 +2,28 @@ package tn.supcom.coldtrace.alert;
 
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.json.bind.Jsonb;
 import jakarta.json.bind.JsonbBuilder;
 import jakarta.websocket.Session;
+import tn.supcom.coldtrace.push.PushService;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
-/** Keeps the connected WebSocket clients and sends them each alert. */
+/** Keeps the connected WebSocket clients and sends them each alert; new incidents are also pushed (PushService). */
 @ApplicationScoped
 public class AlertBroadcaster {
 
     private static final Logger LOG = Logger.getLogger(AlertBroadcaster.class.getName());
 
     private final Set<Session> sessions = ConcurrentHashMap.newKeySet();
+
+    /** New incidents also go to the phones of the people concerned (Web Push), even with the app closed. */
+    @Inject
+    PushService push;
     private final Jsonb jsonb = JsonbBuilder.create();
 
     public void add(Session session) {
@@ -30,6 +36,9 @@ public class AlertBroadcaster {
 
     /** Sends asynchronously, so a slow client cannot delay the MQTT thread. */
     public void broadcast(AlertEvent event) {
+        if (push != null && AlertEvent.OPENED.equals(event.getEvent())) {
+            push.incidentOpened(event.getIncident());
+        }
         String json = jsonb.toJson(event);
         for (Session session : sessions) {
             try {

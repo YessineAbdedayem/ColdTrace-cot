@@ -39,9 +39,31 @@ src/main/webapp/
 | `GET /api/dev/faults` | `admin`, `operator` | **dev only**: the simulator's sensors and their active fault |
 | `POST /api/dev/faults` | `admin`, `operator` | **dev only**: `{"sensorId":"S01","fault":"door_open"}` (or `siteId`); faults: `door_open`, `temp_rise`, `silent`, `none` |
 | `POST /api/dev/faults/clear` | `admin`, `operator` | **dev only**: clears every fault |
+| `GET /api/sensors/{id}`, `GET /api/sites[/{id}]`, `GET /api/thresholds[/{profile}]` | all | configuration (list: `offset`, `limit` up to 500) |
+| `POST`, `PUT /api/sensors[/{id}]`, `DELETE /api/sensors/{id}` | `admin` | register, edit, deactivate a sensor (history kept) |
+| `POST`, `PUT /api/sites[/{id}]`, `DELETE /api/sites/{id}` | `admin` | same for sites; `operators`: the usernames who receive the site's alerts on their phone |
+| `PUT /api/thresholds/{profile}` | `admin` | limits of a profile (creates it if new): `{"temperatureMin":0,"temperatureMax":4}` |
+| `GET /api/ingestion`, `GET /api/ingestion/quarantine` | `admin` | durable inbox state and rejected messages |
+| `GET /api/reports/history?sensorId=&from=&to=&points=300` | all | readings averaged per time bucket (avg/min/max temperature, humidity, door), limits, incidents |
+| `GET /api/reports/kpi?siteId=&from=&to=` | all | indicators per sensor and in total: compliance %, readings, incidents by type, time out of range, mean time to acknowledge |
+| `GET /api/reports/compliance.csv` / `.pdf` `?siteId=&from=&to=` | all | the compliance report (indicators + incident list) as a download |
+| `GET /api/reports/measurements.csv?sensorId=&siteId=&from=&to=` | all | raw readings for an audit (at most 200 000 rows) |
+| `GET /api/push` | all | `{enabled, publicKey, devices}`: the VAPID key browsers subscribe with |
+| `POST`, `DELETE /api/push/subscriptions` | all | this device starts/stops receiving alerts (the browser's `PushSubscription` JSON) |
+| `POST /api/push/test` | all | a test notification to the caller's devices |
 | `ws://…/ws/alerts?access_token=…` | all | live alert events (see "Alerts") |
 
 "All" means the three roles: `admin`, `quality`, `operator`.
+
+Reports take `from` / `to` as ISO-8601 instants (default: the last 24 hours, at most 366 days). Every stored reading
+counts, replayed ones included; compliance is the share of readings within the profile's current limits.
+
+**Alerts on phones (Web Push, EF-04).** Each new incident is also sent, encrypted (RFC 8291, VAPID RFC 8292, JDK
+crypto only), to the devices that enabled alerts in the front office: quality managers and admins get every incident;
+operators (drivers) get those of the sites they are assigned to in the back office, or all if a site has nobody
+assigned. The VAPID keys are created in `KEYS_DIR` (`/keys`) on the first start. Settings: `PUSH_ENABLED` (default
+`true`), `PUSH_SUBJECT` (contact, default `mailto:admin@coldtrace.test`), `PUSH_ALLOWED_HOSTS` (the push services the
+server may call; default: Google, Mozilla, Apple, Microsoft).
 
 ## Login
 

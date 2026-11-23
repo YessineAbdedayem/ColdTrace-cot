@@ -779,6 +779,8 @@ function startSession() {
   updateConnection();
   connectAlerts();
   poll();
+  // reports.js and notify.js follow the session
+  window.dispatchEvent(new CustomEvent("coldtrace:session", { detail: { signedIn: true } }));
 }
 
 function signOut(message) {
@@ -807,6 +809,7 @@ function signOut(message) {
   hint("");
   updateConnection();
   showLogin(message);
+  window.dispatchEvent(new CustomEvent("coldtrace:session", { detail: { signedIn: false } }));
 }
 
 $("#login-form").addEventListener("submit", async event => {

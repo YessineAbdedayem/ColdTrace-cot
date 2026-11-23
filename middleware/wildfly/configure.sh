@@ -18,6 +18,7 @@ STEPS=(
   "default-host.cli       default-host-$ENV.properties"
   "coldtrace-frontoffice.cli coldtrace-$ENV.properties"
   "add-host.cli           admin-host-$ENV.properties"
+  "coldtrace-backoffice.cli admin-host-$ENV.properties"
   "add-api.cli            api-$ENV.properties"
   "add-api.cli            iam-$ENV.properties"
   "coldtrace-tls.cli      coldtrace-$ENV.properties"

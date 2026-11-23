@@ -16,7 +16,12 @@ en temps réel.
 
 Deux applications clientes sont prévues :
 - **front-office** : PWA installable avec le tableau de bord existant, historique récent, acquittement et coque hors ligne ;
-- **back-office** : future PWA de gestion des capteurs, des sites, des seuils et des utilisateurs.
+- **back-office** : PWA d'administration des sites, des capteurs, des seuils, des utilisateurs et de l'ingestion
+  ([frontends/back-office](frontends/back-office/README.md)).
+
+Le front-office affiche aussi l'**historique** (graphiques Chart.js), les **indicateurs** (conformité, incidents,
+temps hors plage, délai d'acquittement) et exporte le **rapport de conformité** en PDF ou CSV. Les nouvelles alertes
+arrivent en **notification push** sur le téléphone du responsable qualité et des chauffeurs du site concerné.
 
 ## Technologies
 
@@ -50,19 +55,20 @@ n'utilise pas Nginx. Voir aussi [le lancement local](docs/LANCEMENT-LOCAL.md).
 ```
 .
 ├── README.md
-├── docs/                          # Cahier des charges, PDF, format des messages, MLOPS.md et ses figures
+├── docs/                          # Cahier des charges, PDF, format des messages, MLOPS.md, collection Postman
 ├── frontends/
 │   ├── front-office/              # PWA : moniteur, manifeste, service worker, icônes et tests
-│   └── back-office/               # Réservé à la future PWA
+│   └── back-office/               # PWA d'administration : sites, capteurs, seuils, utilisateurs, ingestion
 ├── middleware/
 │   ├── api/                       # Projet Maven existant : ingestion, alertes, REST et WebSocket
 │   ├── core/                      # Réservé ; aucun module Maven pour le moment
 │   ├── iam/                       # Serveur de connexion (Jakarta Security) : utilisateurs, rôles, jetons signés
 │   └── wildfly/                   # LE serveur WildFly : scripts du cours + propriétés dev/prod, image Docker, déploiement
-├── gateway-iot/                    # Node-RED, brokers MQTT, simulateur et stack Docker Compose
+├── gateway-iot/                    # Node-RED, brokers MQTT, simulateur, firmware ESP32 et stack Docker Compose
+├── deploy/                        # Déploiement sur un serveur cloud Ubuntu (git clone, puis git pull)
 ├── mlops/                         # Pipeline MLOps : données, entraînement, MLflow, API du modèle, surveillance, CI
 ├── start.ps1, start.cmd           # Démarrage de tout le projet en une commande (Windows)
-└── .github/workflows/             # CI : mlops.yml (pipeline MLOps), wildfly-platform.yml (WildFly, HTTPS, PWA)
+└── .github/workflows/             # CI : mlops.yml, wildfly-platform.yml (WildFly, HTTPS, PWA), deploy.yml (cloud)
 ```
 
 ## Démarrage rapide (Windows)
@@ -92,7 +98,7 @@ ipconfig /flushdns
 | Adresse | Service |
 |---|---|
 | https://coldtrace.test | Moniteur (Front Office) : se connecter avec `admin`, `qualite` ou `operateur` |
-| https://admin.coldtrace.test | Back-office (page provisoire) |
+| https://admin.coldtrace.test | Back-office : administrateurs (`admin`) |
 | https://api.coldtrace.test/api/health | API REST |
 | https://iam.coldtrace.test/auth/login | Serveur de connexion (IAM) : utilisateurs `admin`, `qualite`, `operateur`, mots de passe dans `gateway-iot/.env` (`IAM_*_PASSWORD`) |
 | https://api.coldtrace.test/ml/docs | API du modèle |
@@ -115,6 +121,9 @@ l'installation, les mises à jour et les limites selon le navigateur.
 Le [format des messages](docs/MESSAGE-FORMAT.md), le [cahier des charges](docs/cahier_des_charges_coldtrace_v3.tex),
 le [document Cloud of Things](docs/Cloud_of_Things.pdf) et l'[explication de la passerelle](docs/Gateway-explained.pdf)
 sont regroupés dans `docs/`, avec la [documentation MLOps](docs/MLOPS.md).
+La [collection Postman](docs/postman/README.md) teste l'API et l'IAM (44 requêtes), le [firmware ESP32](gateway-iot/firmware/README.md)
+publie les mesures réelles sur le broker du site, et le [déploiement cloud](deploy/README.md) installe ColdTrace sur un
+serveur Ubuntu (`setup.sh`, puis `update.sh` ou le workflow GitHub *Deploy*).
 
 ## Pipeline MLOps : alerte précoce
 

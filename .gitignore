@@ -1,6 +1,6 @@
-# Legacy generated output left in place during the API source relocation.
-/api-rest/target/
-
 # Personal notes and logs, kept out of the repository
 /output.txt
 /CHANGES.md
+
+# WildFly settings generated for a cloud domain by deploy/ubuntu/render-config.sh
+/middleware/wildfly/config/*-cloud.properties

@@ -166,7 +166,7 @@ if ($missingCert) {
 # HTTPS certificate of the WildFly (*.coldtrace.test), signed by the development CA above.
 $newTls = Set-SecretIfMissing $gatewayEnv "WEB_TLS_PASSWORD"
 if ($newTls -or -not (Test-Path (Join-Path $certs "web.p12"))) {
-    $bash = "C:\Program Files\Gitinash.exe"
+    $bash = "C:\Program Files\Git\bin\bash.exe"
     if (-not (Test-Path $bash)) { Fail "The HTTPS certificate is missing and Git Bash was not found to create it. Install Git for Windows, or run middleware/wildfly/gen-web-cert.sh yourself." }
     Info "Creating the HTTPS certificate for *.coldtrace.test..."
     $env:WEB_TLS_PASSWORD = ((Get-Content $gatewayEnv) -match '^WEB_TLS_PASSWORD=' | Select-Object -First 1).Substring(17).Trim()

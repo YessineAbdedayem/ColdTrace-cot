@@ -3,9 +3,10 @@
 // Bump this version whenever the shell changes. Install a complete offline
 // snapshot; keep an update waiting until the operator chooses to reload.
 const CACHE_PREFIX = "coldtrace-shell-";
-const CACHE_NAME = CACHE_PREFIX + "phase-a-1";
+const CACHE_NAME = CACHE_PREFIX + "phase-b-1";
 const SHELL = [
-  "/", "/index.html", "/monitor.css", "/monitor.js", "/pwa.js",
+  "/", "/index.html", "/monitor.css", "/monitor.js", "/reports.js", "/notify.js", "/pwa.js",
+  "/vendor/chart.umd.min.js",
   "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png",
   "/icons/maskable-512.png", "/icons/apple-touch-icon.png"
 ];
@@ -46,5 +47,37 @@ self.addEventListener("fetch", event => {
       if (cached) return cached;
       throw error;
     }
+  })());
+});
+
+// ---------- alerts on this device (Web Push, see notify.js and the API's PushService) ----------
+// Each new incident arrives as an encrypted message from the browser's push service; the API decides who gets it.
+
+self.addEventListener("push", event => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (error) { data = { body: event.data?.text() }; }
+  const title = typeof data.title === "string" && data.title ? data.title : "ColdTrace alert";
+  event.waitUntil(self.registration.showNotification(title, {
+    body: typeof data.body === "string" ? data.body : "",
+    tag: typeof data.tag === "string" && data.tag ? data.tag : undefined,
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
+    requireInteraction: data.metric === "temperature" || data.metric === "humidity",
+    data: { url: typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/" }
+  }));
+});
+
+self.addEventListener("notificationclick", event => {
+  event.notification.close();
+  const target = new URL(event.notification.data?.url || "/", self.location.origin).href;
+  event.waitUntil((async () => {
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    const open = windows.find(client => new URL(client.url).origin === self.location.origin);
+    if (open) {
+      await open.focus();
+      if ("navigate" in open) await open.navigate(target).catch(() => {});
+      return;
+    }
+    await self.clients.openWindow(target);
   })());
 });

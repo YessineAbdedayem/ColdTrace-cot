@@ -1,0 +1,33 @@
+# ColdTrace on a cloud server (Ubuntu IaaS): the development stack of gateway-iot/docker-compose.yml, with
+#   - the real domain (DOMAIN in gateway-iot/.env) instead of coldtrace.test, built with ENV=cloud
+#     (middleware/wildfly/config/*-cloud.properties, written by deploy/ubuntu/render-config.sh),
+#   - HTTPS (443, with 80 redirecting) and MQTTS (8883, for the gateways of the sites) open to the internet,
+#   - a public certificate (Let's Encrypt) in gateway-iot/certs/web.p12.
+#
+# Used by deploy/ubuntu/setup.sh and update.sh, always together with the base file:
+#   docker compose --project-directory gateway-iot -f gateway-iot/docker-compose.yml -f deploy/docker-compose.cloud.yml up -d --build
+# Needs Docker Compose 2.24 or later (the !override tag).
+services:
+  wildfly:
+    build:
+      args:
+        ENV: cloud
+    ports: !override
+      - "80:80"
+      - "443:443"
+    environment:
+      IAM_URL: http://iam.${DOMAIN:?Set DOMAIN in gateway-iot/.env}:8080
+      PUSH_SUBJECT: ${PUSH_SUBJECT:-mailto:admin@example.com}
+    networks:
+      default:
+        aliases: !override
+          - ${DOMAIN}
+          - www.${DOMAIN}
+          - api.${DOMAIN}
+          - iam.${DOMAIN}
+          - admin.${DOMAIN}
+
+  # The gateways of the sites (Raspberry Pi with Node-RED) connect here over MQTTS, with their own login (acl).
+  cloud-broker:
+    ports: !override
+      - "8883:8883"

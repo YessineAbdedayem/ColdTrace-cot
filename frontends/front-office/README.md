@@ -31,7 +31,21 @@ The real alert keeps its orange style.
 - **The fault buttons** (Door, Thaw, Mute, Reset, Clear all) only work for `admin` and `operator`; the API enforces
   the same rule.
 
-The shell cache is `coldtrace-shell-v8`. Only same-origin shell files are cached: the API and the login server, on
+**History & reports** (section below the logbook, every role):
+- pick a sensor and a period (1 h, 6 h, 24 h, 7 d, 30 d): **temperature and humidity charts** (Chart.js 4.6.1,
+  served from `vendor/`, so it works without a CDN) with the average line, the min–max band, the profile limits
+  (dashed) and the out-of-range parts in orange; hover shows the values of a time bucket;
+- **indicators** for all sites or one: compliance (share of readings within limits), readings, incidents by type,
+  time out of range, mean time to acknowledge, unacknowledged incidents; and a table per sensor;
+- **exports**: compliance report as PDF or CSV, raw readings as CSV (`/api/reports/...`);
+- the incidents of the sensor in the period, and the chart data as a table.
+
+**Alerts on this device** (`notify.js`, Web Push): the *Enable alerts on this device* button asks for notification
+permission, subscribes the browser and sends a test notification. New incidents then appear as system notifications
+even when the app is closed; a click opens the logbook. The subscription stays when the session ends (a driver keeps
+receiving alerts) and is re-linked to whoever signs in on the device. Needs HTTPS and the service worker.
+
+The shell cache is `coldtrace-shell-phase-b-1`. Only same-origin shell files are cached: the API and the login server, on
 other hosts, never are.
 
 ## Run

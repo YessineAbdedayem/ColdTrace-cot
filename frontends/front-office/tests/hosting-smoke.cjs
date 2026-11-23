@@ -32,7 +32,8 @@ async function request(url, token, method = "GET", body) {
 }
 (async () => {
   await waitFor(async () => (await request("/")).status === 200, "frontend startup");
-  const assets = ["/", "/index.html", "/monitor.js", "/monitor.css", "/pwa.js", "/sw.js",
+  const assets = ["/", "/index.html", "/monitor.js", "/monitor.css", "/reports.js", "/notify.js", "/pwa.js", "/sw.js",
+    "/vendor/chart.umd.min.js",
     "/manifest.webmanifest", "/icons/icon-192.png", "/icons/icon-512.png",
     "/icons/maskable-512.png", "/icons/apple-touch-icon.png"];
   for (const asset of assets) {
@@ -56,7 +57,18 @@ async function request(url, token, method = "GET", body) {
   assert.equal((await fetch(origin("") + "/", {signal: AbortSignal.timeout(10000)})).status, 200);
   const admin = await fetch(ADMIN + "/", {signal: AbortSignal.timeout(10000)});
   assert.equal(admin.status, 200);
-  assert.match(await admin.text(), /back-office/i);
+  assert.match(await admin.text(), /ColdTrace Back Office/);
+  const adminDir = path.join(root, "..", "back-office");
+  for (const asset of ["/admin.js", "/admin.css", "/sw.js", "/manifest.webmanifest"]) {
+    const response = await fetch(ADMIN + asset, {signal: AbortSignal.timeout(10000)});
+    assert.equal(response.status, 200, "back-office " + asset);
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), fs.readFileSync(path.join(adminDir, asset.slice(1))), "back-office " + asset);
+  }
+  assert.equal((await fetch(ADMIN + "/icons/icon-192.png", {signal: AbortSignal.timeout(10000)})).status, 200, "back-office icon");
+  assert.match((await fetch(ADMIN + "/manifest.webmanifest", {signal: AbortSignal.timeout(10000)})).headers.get("content-type"),
+    /application\/manifest\+json/, "back-office manifest type");
+  assert.equal((await fetch(ADMIN + "/sw.js", {signal: AbortSignal.timeout(10000)})).headers.get("service-worker-allowed"), "/");
+  assert.equal((await fetch(ADMIN + "/README.md", {signal: AbortSignal.timeout(10000)})).status, 404, "back-office README not served");
   // CORS (course scripts): the front-office may call the API and the login server; a foreign site may not.
   const preflight = (target, from, method, headers) => fetch(target, {method: "OPTIONS", signal: AbortSignal.timeout(10000),
     headers: {Origin: from, "Access-Control-Request-Method": method, "Access-Control-Request-Headers": headers}});

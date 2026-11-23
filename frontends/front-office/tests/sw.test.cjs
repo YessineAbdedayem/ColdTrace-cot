@@ -6,7 +6,7 @@ const vm = require("node:vm");
 const root = path.join(__dirname, "..");
 
 function worker() {
-  const handlers = {}, stores = new Map();
+  const handlers = {}, stores = new Map(), shown = [], opened = [];
   let skipped = false, claimed = false, network;
   const caches = {
     async keys() { return [...stores.keys()]; },
@@ -25,12 +25,14 @@ function worker() {
   }
   vm.runInNewContext(fs.readFileSync(path.join(root, "sw.js"), "utf8"), {
     self: { location: { origin: "https://coldtrace.test" }, addEventListener: (name, fn) => { handlers[name] = fn; },
-      clients: { claim: async () => { claimed = true; } }, skipWaiting: () => { skipped = true; } },
+      clients: { claim: async () => { claimed = true; }, matchAll: async () => [], openWindow: async url => { opened.push(url); } },
+      registration: { showNotification: async (title, options) => { shown.push({ title, options }); } },
+      skipWaiting: () => { skipped = true; } },
     caches, URL, Request: LocalRequest,
     fetch: (...args) => network(...args)
   });
   return {
-    handlers, stores, get skipped() { return skipped; }, get claimed() { return claimed; },
+    handlers, stores, shown, opened, get skipped() { return skipped; }, get claimed() { return claimed; },
     set network(fn) { network = fn; },
     async event(name) { let pending; handlers[name]({ waitUntil: p => { pending = p; } }); await pending; },
     fetch(url, method = "GET") {
@@ -113,4 +115,34 @@ test("only an explicit update message activates a waiting worker early", () => {
   assert.equal(sw.skipped, false);
   sw.handlers.message({ data: { type: "ACTIVATE_UPDATE" } });
   assert.equal(sw.skipped, true);
+});
+
+test("a push message shows a notification with the alert, and a click opens the logbook", async () => {
+  const sw = worker();
+  let pending;
+  sw.handlers.push({
+    data: { json: () => ({ title: "ColdTrace · Porte ouverte · S01", body: "Porte ouverte sur S01 · site01",
+      tag: "incident-1", url: "/#logbook", metric: "door" }) },
+    waitUntil: p => { pending = p; }
+  });
+  await pending;
+  assert.equal(sw.shown.length, 1);
+  assert.equal(sw.shown[0].title, "ColdTrace · Porte ouverte · S01");
+  assert.equal(sw.shown[0].options.tag, "incident-1");
+  let closed = false;
+  sw.handlers.notificationclick({
+    notification: { data: sw.shown[0].options.data, close: () => { closed = true; } },
+    waitUntil: p => { pending = p; }
+  });
+  await pending;
+  assert(closed);
+  assert.deepEqual(sw.opened, ["https://coldtrace.test/#logbook"]);
+});
+
+test("a push message never opens another origin", async () => {
+  const sw = worker();
+  let pending;
+  sw.handlers.push({ data: { json: () => ({ title: "x", url: "https://evil.test/" }) }, waitUntil: p => { pending = p; } });
+  await pending;
+  assert.equal(sw.shown[0].options.data.url, "/");
 });

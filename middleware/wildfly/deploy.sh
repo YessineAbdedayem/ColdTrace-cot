@@ -29,6 +29,7 @@ run coldtrace-security.cli     "coldtrace-$ENV.properties"
 run default-host.cli           "default-host-$ENV.properties"     # ends with a reload
 run coldtrace-frontoffice.cli  "coldtrace-$ENV.properties"
 run add-host.cli               "admin-host-$ENV.properties"
+run coldtrace-backoffice.cli   "admin-host-$ENV.properties"
 run add-api.cli                "api-$ENV.properties"
 run add-api.cli                "iam-$ENV.properties"
 run coldtrace-tls.cli          "coldtrace-$ENV.properties"

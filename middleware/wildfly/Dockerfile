@@ -30,10 +30,15 @@ ARG ENV=dev
 
 # Static sites: only the public files, never tests, READMEs or configuration.
 COPY frontends/front-office/index.html frontends/front-office/monitor.css frontends/front-office/monitor.js \
+     frontends/front-office/reports.js frontends/front-office/notify.js \
      frontends/front-office/pwa.js frontends/front-office/sw.js frontends/front-office/manifest.webmanifest \
      /opt/jboss/www/frontoffice/
 COPY frontends/front-office/icons/ /opt/jboss/www/frontoffice/icons/
-COPY middleware/wildfly/www/backoffice/ /opt/jboss/www/backoffice/
+COPY frontends/front-office/vendor/ /opt/jboss/www/frontoffice/vendor/
+COPY frontends/back-office/index.html frontends/back-office/admin.css frontends/back-office/admin.js \
+     frontends/back-office/sw.js frontends/back-office/manifest.webmanifest \
+     /opt/jboss/www/backoffice/
+COPY frontends/front-office/icons/ /opt/jboss/www/backoffice/icons/
 
 # Server configuration: the course scripts and ours, applied once with the properties of $ENV.
 COPY middleware/wildfly/cli/ /opt/jboss/cli/

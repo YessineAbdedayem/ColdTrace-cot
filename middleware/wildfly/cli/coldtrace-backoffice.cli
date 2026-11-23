@@ -1,0 +1,9 @@
+# ColdTrace: the same two PWA headers as coldtrace-frontoffice.cli, on the back-office's virtual host
+# (${host.key}-host, created by add-host.cli):
+#   manifest.webmanifest  served as application/manifest+json
+#   sw.js                 Service-Worker-Allowed: /
+# Reuses the filters that coldtrace-frontoffice.cli creates. Run after add-host.cli, with the admin-host properties.
+batch
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=pwa-manifest-type:add(predicate="path('/manifest.webmanifest')")
+/subsystem=undertow/server=default-server/host=${host.key}-host/filter-ref=pwa-worker-scope:add(predicate="path('/sw.js')")
+run-batch

@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ColdTrace Back Office</title>
+  <meta name="description" content="ColdTrace administration: sites, sensors, thresholds, users and ingestion.">
+  <meta name="theme-color" content="#0a1518">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ColdTrace Admin">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="bar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">❄</span>
+      <h1>ColdTrace <span>Back office</span></h1>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Sections" hidden>
+      <button type="button" data-tab="overview" aria-current="page">Overview</button>
+      <button type="button" data-tab="sites">Sites</button>
+      <button type="button" data-tab="sensors">Sensors</button>
+      <button type="button" data-tab="thresholds">Thresholds</button>
+      <button type="button" data-tab="users">Users</button>
+      <button type="button" data-tab="ingestion">Ingestion</button>
+    </nav>
+    <div class="who">
+      <span id="user-name"></span>
+      <a id="monitor-link" href="/">Monitor</a>
+      <button type="button" id="logout" hidden>Log out</button>
+    </div>
+  </header>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <div class="login-screen" id="login" hidden>
+    <form class="card login-card" id="login-form" autocomplete="on">
+      <span class="brand-mark" aria-hidden="true">❄</span>
+      <h2>ColdTrace back office</h2>
+      <p class="muted">Administrators only: sites, sensors, thresholds and users.</p>
+      <label>Username <input type="text" id="login-user" autocomplete="username" maxlength="32" required></label>
+      <label>Password <input type="password" id="login-password" autocomplete="current-password" maxlength="128" required></label>
+      <p class="error" id="login-error" role="alert" hidden></p>
+      <button type="submit" class="primary" id="login-submit">Sign in</button>
+    </form>
+  </div>
+
+  <main id="main" tabindex="-1" hidden>
+    <!-- Overview -->
+    <section class="panel" id="panel-overview" aria-labelledby="h-overview">
+      <h2 id="h-overview">Overview</h2>
+      <dl class="stats" id="overview-stats"></dl>
+      <h3>Gateways</h3>
+      <div class="table-wrap"><table id="gateways-table">
+        <thead><tr><th scope="col">Site</th><th scope="col">Gateway</th><th scope="col">Status</th><th scope="col">Last heartbeat</th>
+          <th scope="col" class="num">Forwarded</th><th scope="col" class="num">Buffered</th><th scope="col" class="num">Replayed</th>
+          <th scope="col" class="num">Rejected</th><th scope="col" class="num">Dropped</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <!-- Sites -->
+    <section class="panel" id="panel-sites" aria-labelledby="h-sites" hidden>
+      <div class="panel-head">
+        <h2 id="h-sites">Sites</h2>
+        <button type="button" class="primary" id="add-site">Add a site</button>
+      </div>
+      <p class="muted">A site is a cold room, a freezer room or a vehicle. Its assigned operators (drivers) receive its alerts on their phone; with nobody assigned, every operator does.</p>
+      <div class="table-wrap"><table id="sites-table">
+        <thead><tr><th scope="col">Id</th><th scope="col">Name</th><th scope="col">Location</th><th scope="col">Default profile</th>
+          <th scope="col">Operators</th><th scope="col">State</th><th scope="col"><span class="sr">Actions</span></th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <!-- Sensors -->
+    <section class="panel" id="panel-sensors" aria-labelledby="h-sensors" hidden>
+      <div class="panel-head">
+        <h2 id="h-sensors">Sensors</h2>
+        <label class="inline">Site <select id="sensor-site-filter"><option value="">All</option></select></label>
+        <button type="button" class="primary" id="add-sensor">Register a sensor</button>
+      </div>
+      <p class="muted">The sensor id is the one in its MQTT topic: <code>coldtrace/&lt;site&gt;/&lt;sensor&gt;/telemetry</code>. A deactivated sensor keeps its history and raises no alert.</p>
+      <div class="table-wrap"><table id="sensors-table">
+        <thead><tr><th scope="col">Id</th><th scope="col">Name</th><th scope="col">Site</th><th scope="col">Type</th>
+          <th scope="col">Profile</th><th scope="col">Status</th><th scope="col">Last reading</th><th scope="col"><span class="sr">Actions</span></th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <!-- Thresholds -->
+    <section class="panel" id="panel-thresholds" aria-labelledby="h-thresholds" hidden>
+      <div class="panel-head">
+        <h2 id="h-thresholds">Thresholds</h2>
+        <button type="button" class="primary" id="add-profile">Add a profile</button>
+      </div>
+      <p class="muted">Limits per profile. A change applies to the next readings; past incidents are not rewritten. Leave a field empty for no limit.</p>
+      <div class="table-wrap"><table id="thresholds-table">
+        <thead><tr><th scope="col">Profile</th><th scope="col" class="num">Temp. min °C</th><th scope="col" class="num">Temp. max °C</th>
+          <th scope="col" class="num">Humidity min %</th><th scope="col" class="num">Humidity max %</th><th scope="col">Updated</th>
+          <th scope="col"><span class="sr">Actions</span></th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <!-- Users -->
+    <section class="panel" id="panel-users" aria-labelledby="h-users" hidden>
+      <div class="panel-head">
+        <h2 id="h-users">Users</h2>
+        <button type="button" class="primary" id="add-user">Add a user</button>
+      </div>
+      <p class="muted">Roles: <b>admin</b> (this back office), <b>quality</b> (quality manager: every alert, reports), <b>operator</b> (driver or operator: alerts of the assigned sites).</p>
+      <div class="table-wrap"><table id="users-table">
+        <thead><tr><th scope="col">Username</th><th scope="col">Name</th><th scope="col">Roles</th><th scope="col">State</th>
+          <th scope="col">Created</th><th scope="col"><span class="sr">Actions</span></th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+
+    <!-- Ingestion -->
+    <section class="panel" id="panel-ingestion" aria-labelledby="h-ingestion" hidden>
+      <div class="panel-head">
+        <h2 id="h-ingestion">Ingestion</h2>
+        <button type="button" id="refresh-ingestion">Refresh</button>
+      </div>
+      <p class="muted">Readings are saved to disk before the MQTT broker is acknowledged, then written to MongoDB. Rejected messages are kept in quarantine with the reason.</p>
+      <dl class="stats" id="ingestion-stats"></dl>
+      <h3>Quarantine (latest 100)</h3>
+      <div class="table-wrap"><table id="quarantine-table">
+        <thead><tr><th scope="col">Received</th><th scope="col">Topic</th><th scope="col">Reason</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </section>
+  </main>
+
+  <dialog id="editor" aria-labelledby="editor-title">
+    <form method="dialog" id="editor-form" class="card">
+      <h2 id="editor-title"></h2>
+      <div id="editor-fields"></div>
+      <p class="error" id="editor-error" role="alert" hidden></p>
+      <div class="actions">
+        <button type="button" id="editor-cancel">Cancel</button>
+        <button type="submit" class="primary" id="editor-save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="admin.js"></script>
+</body>
+</html>

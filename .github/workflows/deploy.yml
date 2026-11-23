@@ -1,0 +1,50 @@
+# Deploys main to the cloud server once the "WildFly platform" checks have passed on it, or on demand.
+# The server runs deploy/ubuntu/update.sh: git pull, rebuild, restart, health check (see deploy/README.md).
+#
+# Repository settings (Settings > Secrets and variables > Actions):
+#   variables  DEPLOY_HOST  server name or address      DEPLOY_USER  coldtrace (owner of /opt/coldtrace)
+#   secrets    DEPLOY_SSH_KEY      a private key whose public half is in ~coldtrace/.ssh/authorized_keys
+#              DEPLOY_KNOWN_HOSTS  the server's line(s) from: ssh-keyscan -t ed25519 <DEPLOY_HOST>
+# Without DEPLOY_HOST the workflow does nothing (forks, or before the server exists).
+name: Deploy
+on:
+  workflow_run:
+    workflows: ["WildFly platform"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: >-
+      vars.DEPLOY_HOST != '' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://www.${{ vars.DEPLOY_DOMAIN || vars.DEPLOY_HOST }}
+    steps:
+      - name: SSH key and known host
+        env:
+          KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN" > ~/.ssh/known_hosts
+      - name: Update the server (git pull, rebuild, health check)
+        env:
+          HOST: ${{ vars.DEPLOY_HOST }}
+          USER_NAME: ${{ vars.DEPLOY_USER || 'coldtrace' }}
+        run: |
+          ssh -i ~/.ssh/deploy -o StrictHostKeyChecking=yes -o BatchMode=yes "$USER_NAME@$HOST" \
+            /opt/coldtrace/deploy/ubuntu/update.sh
+      - name: Forget the key
+        if: always()
+        run: rm -f ~/.ssh/deploy

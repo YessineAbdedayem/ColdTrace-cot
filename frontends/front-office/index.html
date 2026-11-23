@@ -54,7 +54,10 @@
     <nav class="section-nav" aria-label="Dashboard sections">
       <a href="#sites">Sensors</a>
       <a href="#logbook" id="incidents-nav">Incidents</a>
+      <a href="#history">History &amp; reports</a>
     </nav>
+    <button type="button" class="pwa-button" id="push-toggle" hidden>Enable alerts on this device</button>
+    <p class="push-state" id="push-state" role="status" aria-live="polite" hidden></p>
     <button type="button" class="pwa-button" id="install-app" hidden>Install app</button>
   </div>
   <div class="update-panel" id="pwa-update" hidden>
@@ -97,6 +100,73 @@ docker compose start cloud-broker</pre>
     </aside>
   </main>
 
+  <section class="history" id="history" tabindex="-1" aria-labelledby="history-title" hidden>
+    <header class="history-head">
+      <h2 class="stencil" id="history-title">History &amp; reports</h2>
+      <p class="history-state" id="history-state" role="status" aria-live="polite"></p>
+    </header>
+
+    <div class="history-filters" role="group" aria-label="Report filters">
+      <label>Sensor <select id="history-sensor"></select></label>
+      <label>Site (indicators and reports) <select id="history-site"><option value="">All sites</option></select></label>
+      <div class="range" role="group" aria-label="Period">
+        <button type="button" data-hours="1">1 h</button>
+        <button type="button" data-hours="6">6 h</button>
+        <button type="button" data-hours="24" class="active" aria-pressed="true">24 h</button>
+        <button type="button" data-hours="168">7 d</button>
+        <button type="button" data-hours="720">30 d</button>
+      </div>
+      <div class="exports" role="group" aria-label="Exports">
+        <button type="button" id="export-pdf">Compliance report (PDF)</button>
+        <button type="button" id="export-csv">Compliance report (CSV)</button>
+        <button type="button" id="export-readings">Readings (CSV)</button>
+      </div>
+    </div>
+
+    <dl class="kpis" id="kpis">
+      <div><dt>Compliance</dt><dd id="kpi-compliance">--</dd><span class="kpi-note">readings within limits</span></div>
+      <div><dt>Readings</dt><dd id="kpi-readings">--</dd></div>
+      <div><dt>Incidents</dt><dd id="kpi-incidents">--</dd><span class="kpi-note" id="kpi-incidents-note"></span></div>
+      <div><dt>Out of range</dt><dd id="kpi-alarm">--</dd><span class="kpi-note">temperature or humidity</span></div>
+      <div><dt>Time to acknowledge</dt><dd id="kpi-mtta">--</dd><span class="kpi-note">mean</span></div>
+      <div><dt>Unacknowledged</dt><dd id="kpi-unack">--</dd></div>
+    </dl>
+
+    <div class="charts">
+      <figure class="chart-card">
+        <figcaption><span class="chart-title" id="chart-temp-title">Temperature (°C)</span>
+          <span class="chart-key"><i class="key-line"></i>average <i class="key-band"></i>min–max <i class="key-limit"></i>limits <i class="key-out"></i>out of range</span></figcaption>
+        <div class="chart-box"><canvas id="chart-temp" role="img" aria-label="Temperature history"></canvas></div>
+      </figure>
+      <figure class="chart-card">
+        <figcaption><span class="chart-title" id="chart-hum-title">Humidity (%)</span>
+          <span class="chart-key"><i class="key-line"></i>average <i class="key-limit"></i>limits <i class="key-out"></i>out of range</span></figcaption>
+        <div class="chart-box"><canvas id="chart-hum" role="img" aria-label="Humidity history"></canvas></div>
+      </figure>
+    </div>
+
+    <h3 class="log-title">Incidents of this sensor in the period</h3>
+    <ol class="history-incidents" id="history-incidents"></ol>
+
+    <h3 class="log-title">Indicators per sensor</h3>
+    <div class="table-wrap">
+      <table class="kpi-table" id="kpi-table">
+        <thead><tr><th scope="col">Sensor</th><th scope="col">Site</th><th scope="col">Profile</th><th scope="col">Readings</th>
+          <th scope="col">Min / avg / max °C</th><th scope="col">Compliance</th><th scope="col">Incidents</th>
+          <th scope="col">Out of range</th><th scope="col">Time to ack.</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <details class="chart-data">
+      <summary>Chart data as a table</summary>
+      <div class="table-wrap"><table class="kpi-table" id="points-table">
+        <thead><tr><th scope="col">Time</th><th scope="col">Avg °C</th><th scope="col">Min °C</th><th scope="col">Max °C</th>
+          <th scope="col">Humidity %</th><th scope="col">Door</th><th scope="col">Readings</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </details>
+  </section>
+
   <template id="tile-tpl">
     <article class="tile">
       <header class="tile-head">
@@ -123,7 +193,10 @@ docker compose start cloud-broker</pre>
     </article>
   </template>
 
+  <script src="vendor/chart.umd.min.js"></script>
   <script src="monitor.js"></script>
+  <script src="reports.js"></script>
+  <script src="notify.js"></script>
   <script src="pwa.js"></script>
 </body>
 </html>

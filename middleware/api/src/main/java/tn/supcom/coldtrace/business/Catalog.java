@@ -77,13 +77,14 @@ public class Catalog {
             throw conflict("configuration changed concurrently; reload and retry");
     }
     public Document site(String identifier, String json, boolean create) {
-        Document req = body(json, "id", "name", "location", "defaultProfile", "active");
+        Document req = body(json, "id", "name", "location", "defaultProfile", "active", "operators");
         String key = create ? id(text(req, "id", 32, true)) : id(identifier);
         Document value = create ? new Document("_id", key).append("active", true).append("createdAt", new Date()) : require("sites", key);
         if (req.containsKey("id") && !key.equals(req.get("id"))) throw invalid("id is immutable");
         if (create || req.containsKey("name")) value.put("name", text(req, "name", 120, true));
         if (req.containsKey("location")) value.put("location", text(req, "location", 240, false));
         if (req.containsKey("defaultProfile")) { String p = text(req, "defaultProfile", 32, false); checkProfile(p); value.put("defaultProfile", p); }
+        if (req.containsKey("operators")) value.put("operators", usernames(req.get("operators")));
         applyActive(req, value);
         value.put("updatedAt", new Date());
         save("sites", value, create);
@@ -115,6 +116,17 @@ public class Catalog {
         value.put("updatedAt", new Date());
         save("sensors", value, create);
         return value;
+    }
+    /** The drivers / operators assigned to a site (IAM usernames): they receive its alerts on their phone. */
+    public static List<String> usernames(Object value) {
+        if (value == null) return List.of();
+        if (!(value instanceof List<?> list) || list.size() > 50) throw invalid("operators: a list of at most 50 usernames");
+        Set<String> result = new TreeSet<>();
+        for (Object o : list) {
+            if (!(o instanceof String s) || !s.matches("[a-z0-9._-]{3,32}")) throw invalid("operators: usernames of 3..32 characters among a-z 0-9 . - _");
+            result.add(s);
+        }
+        return new ArrayList<>(result);
     }
     private static void applyActive(Document request, Document target) {
         if (!request.containsKey("active")) return;

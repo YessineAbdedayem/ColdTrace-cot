@@ -16,7 +16,9 @@ services:
   site-broker:
     image: eclipse-mosquitto:2.0.20
     ports:
-      - "127.0.0.1:1883:1883"
+      # 127.0.0.1: this PC only. Set SITE_BROKER_BIND=0.0.0.0 in .env so real ESP32 sensors on the site's
+      # network can publish (gateway-iot/firmware).
+      - "${SITE_BROKER_BIND:-127.0.0.1}:1883:1883"
     volumes:
       - ./mosquitto/site/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - site-data:/mosquitto/data
@@ -158,6 +160,9 @@ services:
       # Set ML_FORECAST_URL= (empty) in .env to turn them off.
       ML_FORECAST_URL: ${ML_FORECAST_URL-http://model-api:8000}
       ML_POLL_SECONDS: ${ML_POLL_SECONDS:-30}
+      # Alerts on phones (Web Push): VAPID keys are created in /keys on the first start
+      PUSH_ENABLED: ${PUSH_ENABLED:-true}
+      PUSH_SUBJECT: ${PUSH_SUBJECT:-mailto:admin@coldtrace.test}
       # Login: the API checks the IAM's tokens with its public key, fetched from the IAM's virtual host
       IAM_URL: http://iam.coldtrace.test:8080
       # --- IAM (iam-1.0.war) ---
