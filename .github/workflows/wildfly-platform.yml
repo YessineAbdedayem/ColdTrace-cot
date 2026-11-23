@@ -4,16 +4,16 @@
 name: WildFly platform
 on:
   push:
-    paths: ["frontends/**", "middleware/**", "gateway-iot/**", ".github/workflows/wildfly-platform.yml"]
+    paths: ["frontends/**", "middleware/**", "gateway-iot/**", "mlops/serving/**", ".github/workflows/wildfly-platform.yml"]
   pull_request:
-    paths: ["frontends/**", "middleware/**", "gateway-iot/**", ".github/workflows/wildfly-platform.yml"]
+    paths: ["frontends/**", "middleware/**", "gateway-iot/**", "mlops/serving/**", ".github/workflows/wildfly-platform.yml"]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   platform:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       COMPOSE: docker compose -f frontends/front-office/tests/hosting.compose.yml
       FRONT_OFFICE_URL: https://www.coldtrace.test:13443
@@ -22,9 +22,9 @@ jobs:
       PWA_TEST_PASSWORD: Integration-only-123!
       HOSTING_MUTATIONS: "1"
       PWA_TEST_ACTIONS: "1"
-      HOSTING_CERTS_DIR: ${{ runner.temp }}/coldtrace-hosting/certs
+      HOSTING_CERTS_DIR: ${{ runner.temp }}/coldtrace-phase-a-ci/certs
       # Node's fetch and WebSocket trust the disposable development CA
-      NODE_EXTRA_CA_CERTS: ${{ runner.temp }}/coldtrace-hosting/certs/ca.crt
+      NODE_EXTRA_CA_CERTS: ${{ runner.temp }}/coldtrace-phase-a-ci/certs/ca.crt
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,14 +34,14 @@ jobs:
           cache-dependency-path: frontends/front-office/package-lock.json
       - name: Unit tests
         run: |
-          node --test gateway-iot/simulator/fake-sensors.test.js
+          node --test gateway-iot/simulator/fake-sensors.test.js gateway-iot/simulator/gateway-contract.test.js
           node --test frontends/front-office/tests/sw.test.cjs
       - name: Disposable certificates (MQTT broker and HTTPS) and the names of the virtual hosts
         shell: bash
         run: |
-          mkdir -p "$RUNNER_TEMP/coldtrace-hosting/scripts" "$HOSTING_CERTS_DIR"
-          cp gateway-iot/scripts/gen-certs.sh "$RUNNER_TEMP/coldtrace-hosting/scripts/"
-          bash "$RUNNER_TEMP/coldtrace-hosting/scripts/gen-certs.sh"
+          mkdir -p "$RUNNER_TEMP/coldtrace-phase-a-ci/scripts" "$HOSTING_CERTS_DIR"
+          cp gateway-iot/scripts/gen-certs.sh "$RUNNER_TEMP/coldtrace-phase-a-ci/scripts/"
+          bash "$RUNNER_TEMP/coldtrace-phase-a-ci/scripts/gen-certs.sh"
           HOSTING_TLS_PASSWORD="$(openssl rand -hex 16)"
           echo "::add-mask::$HOSTING_TLS_PASSWORD"
           echo "HOSTING_TLS_PASSWORD=$HOSTING_TLS_PASSWORD" >> "$GITHUB_ENV"
@@ -80,6 +80,18 @@ jobs:
         run: |
           mkdir -p deployment
           $COMPOSE logs --no-color > deployment/stack.log
+      - name: Phase A real MQTT failure injection and business APIs (14 scenarios)
+        shell: bash
+        run: |
+          export PHASE_A_CONFIG="$RUNNER_TEMP/coldtrace-phase-a-ci/config.json"
+          export HOSTING_HTTPS_PORT=14443
+          export PHASE_A_PASSWORD="$(openssl rand -hex 24)"
+          echo "::add-mask::$PHASE_A_PASSWORD"
+          echo "PHASE_A_PASSWORD=$PHASE_A_PASSWORD" >> "$GITHUB_ENV"
+          echo "PHASE_A_CONFIG=$PHASE_A_CONFIG" >> "$GITHUB_ENV"
+          node -e 'require("fs").writeFileSync(process.env.PHASE_A_CONFIG,JSON.stringify({certDir:process.env.HOSTING_CERTS_DIR,tlsPassword:process.env.HOSTING_TLS_PASSWORD,password:process.env.PHASE_A_PASSWORD,port:14443}))'
+          docker compose -f frontends/front-office/tests/hosting.compose.yml -f frontends/front-office/tests/phase-a.compose.yml up -d --build
+          node frontends/front-office/tests/phase-a-integration.cjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -87,6 +99,15 @@ jobs:
           path: |
             deployment/
             frontends/front-office/test-results/
+            middleware/api/target/phase-a-evidence/
       - name: Stop the isolated stack (no persistent volumes)
         if: always()
         run: $COMPOSE down
+      - name: Stop Phase A containers (retain isolated data volumes)
+        if: always()
+        env:
+          HOSTING_HTTPS_PORT: "14443"
+        run: |
+          if [ -n "$PHASE_A_PASSWORD" ]; then
+            docker compose -f frontends/front-office/tests/hosting.compose.yml -f frontends/front-office/tests/phase-a.compose.yml down
+          fi

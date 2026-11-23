@@ -1,0 +1,58 @@
+# Overlay for hosting.compose.yml ONLY. Distinct project, durable test volumes and credentials.
+name: coldtrace-phase-a-check
+services:
+  mongo:
+    tmpfs: !reset []
+    volumes: [phase-a-mongo:/data/db, phase-a-config:/data/configdb]
+  site-broker:
+    tmpfs: !reset []
+    volumes:
+      - phase-a-site:/mosquitto/data
+  cloud-broker:
+    tmpfs: !reset []
+    volumes:
+      - phase-a-cloud:/mosquitto/data
+    entrypoint: ["sh", "-c", "mosquitto_passwd -c -b /mosquitto/passwd site01 integration-only-pass && mosquitto_passwd -b /mosquitto/passwd site04 integration-only-pass && mosquitto_passwd -b /mosquitto/passwd backend integration-only-pass && chown mosquitto:mosquitto /mosquitto/passwd && chmod 0700 /mosquitto/passwd && exec mosquitto -c /mosquitto/config/mosquitto.conf"]
+  node-red:
+    tmpfs: !reset []
+    volumes: [phase-a-gateway:/data]
+  wildfly:
+    image: coldtrace-phase-a-wildfly
+    environment:
+      SENSOR_FRESH_SECONDS: "6"
+      SENSOR_OFFLINE_SECONDS: "12"
+      IAM_ADMIN_PASSWORD: ${PHASE_A_PASSWORD:?temporary test password required}
+      IAM_QUALITY_PASSWORD: ${PHASE_A_PASSWORD:?temporary test password required}
+      IAM_OPERATOR_PASSWORD: ${PHASE_A_PASSWORD:?temporary test password required}
+  site-broker-two:
+    image: eclipse-mosquitto:2.0.20
+    volumes:
+      - ../../../gateway-iot/mosquitto/site/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - phase-a-site-two:/mosquitto/data
+  node-red-two:
+    extends: {file: hosting.compose.yml, service: node-red}
+    tmpfs: !reset []
+    depends_on: [site-broker-two, cloud-broker]
+    volumes:
+      - phase-a-gateway-two:/data
+    environment:
+      SITE_ID: site04
+      GATEWAY_ID: gw-site04
+      CLOUD_GATEWAY_USER: site04
+      SITE_BROKER_HOST: site-broker-two
+  model-tests:
+    profiles: [checks]
+    image: coldtrace-phase-a-model-checks
+    build:
+      context: ../../../mlops
+      dockerfile: serving/Dockerfile
+    entrypoint: ["python", "-m", "pytest", "-q"]
+
+volumes:
+  phase-a-mongo:
+  phase-a-config:
+  phase-a-site:
+  phase-a-cloud:
+  phase-a-gateway:
+  phase-a-site-two:
+  phase-a-gateway-two:

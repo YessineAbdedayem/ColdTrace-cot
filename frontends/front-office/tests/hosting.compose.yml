@@ -84,6 +84,7 @@ services:
     volumes:
       - ${HOSTING_CERTS_DIR:-../../../gateway-iot/certs}/ca.crt:/certs/ca.crt:ro
       - ${HOSTING_CERTS_DIR:-../../../gateway-iot/certs}/web.p12:/certs/web.p12:ro
+      - ingestion-check:/ingestion
     environment:
       MONGO_URI: mongodb://mongo/coldtrace
       WEB_TLS_PASSWORD: ${HOSTING_TLS_PASSWORD:?set HOSTING_TLS_PASSWORD, the password of web.p12}
@@ -91,6 +92,7 @@ services:
       MQTT_USER: backend
       MQTT_PASSWORD: integration-only-pass
       MQTT_CA_PATH: /certs/ca.crt
+      INGESTION_DIR: /ingestion
       IAM_URL: http://iam.coldtrace.test:8080
       SIM_CONTROL_URL: http://simulator:4000
       ML_FORECAST_URL: ""
@@ -101,3 +103,6 @@ services:
     networks:
       default:
         aliases: [coldtrace.test, www.coldtrace.test, api.coldtrace.test, iam.coldtrace.test, admin.coldtrace.test]
+
+volumes:
+  ingestion-check:

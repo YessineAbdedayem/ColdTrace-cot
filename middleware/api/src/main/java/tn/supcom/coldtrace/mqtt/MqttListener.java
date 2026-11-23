@@ -1,10 +1,5 @@
 package tn.supcom.coldtrace.mqtt;
 
-import com.mongodb.ErrorCategory;
-import com.mongodb.MongoWriteException;
-import com.mongodb.client.MongoDatabase;
-import com.mongodb.client.model.Filters;
-import com.mongodb.client.model.UpdateOptions;
 import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Priority;
 import jakarta.annotation.Resource;
@@ -13,8 +8,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.Startup;
 import jakarta.inject.Inject;
-import jakarta.json.bind.Jsonb;
-import jakarta.json.bind.JsonbBuilder;
 import org.eclipse.paho.client.mqttv3.IMqttActionListener;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.IMqttToken;
@@ -24,8 +17,6 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
-import org.bson.Document;
-import tn.supcom.coldtrace.alert.AlertEngine;
 import tn.supcom.coldtrace.model.GatewayStatus;
 import tn.supcom.coldtrace.model.Measurement;
 
@@ -65,15 +56,11 @@ public class MqttListener implements MqttCallbackExtended {
     private static final long RETRY_SECONDS = 5;
 
     @Inject
-    MongoDatabase db;
-
-    @Inject
-    AlertEngine alerts;
+    tn.supcom.coldtrace.ingestion.IngestionService ingestion;
 
     @Resource
     ManagedScheduledExecutorService scheduler;
 
-    private final Jsonb jsonb = JsonbBuilder.create();
     private MqttAsyncClient client;
     private MqttConnectOptions options;
     private volatile boolean stopping;
@@ -83,6 +70,7 @@ public class MqttListener implements MqttCallbackExtended {
             String url = env("MQTT_URL", "ssl://cloud-broker:8883");
             client = new MqttAsyncClient(url, CLIENT_ID, new MemoryPersistence());
             client.setCallback(this);
+            client.setManualAcks(true);
             options = buildOptions(url);
             connect();
         } catch (Exception e) {
@@ -169,83 +157,15 @@ public class MqttListener implements MqttCallbackExtended {
     }
 
     @Override
-    public void messageArrived(String topic, MqttMessage message) {
-        // Never let an exception escape: Paho would drop the connection.
-        try {
-            String payload = new String(message.getPayload(), StandardCharsets.UTF_8);
-            if (topic.endsWith(STATUS_SUFFIX)) {
-                storeGatewayStatus(topic, payload);
-            } else {
-                storeMeasurement(topic, payload);
-            }
-        } catch (Exception e) {
-            LOG.log(Level.SEVERE, "Failed to store message from " + topic, e);
-        }
-    }
-
-    private void storeMeasurement(String topic, String payload) {
-        Measurement m = parse(topic, payload, Measurement.class);
-        if (m == null) {
-            return;
-        }
-        // The topic is the source of truth for the ids: the broker ACL checks the topic, not the body.
-        String[] parts = topic.split("/");
-        if (parts.length == 4) {
-            m.setSiteId(parts[1]);
-            m.setSensorId(parts[2]);
-        }
-        String error = validate(m);
-        if (error != null) {
-            LOG.warning("Rejected message on " + topic + ": " + error + ": " + payload);
-            return;
-        }
-        try {
-            db.getCollection("measurements").insertOne(m.toDocument());
-        } catch (MongoWriteException e) {
-            if (e.getError().getCategory() != ErrorCategory.DUPLICATE_KEY) {
-                throw e;
-            }
-            // QoS 1 and gateway replay can deliver a reading twice: the unique msgId index keeps one copy.
-            LOG.fine("Ignored duplicate reading " + m.getMsgId());
-            return;
-        }
-        try {
-            alerts.process(m);
-        } catch (RuntimeException e) {
-            LOG.log(Level.SEVERE, "Alert evaluation failed for reading " + m.getMsgId(), e);
-        }
-    }
-
-    private void storeGatewayStatus(String topic, String payload) {
-        GatewayStatus s = parse(topic, payload, GatewayStatus.class);
-        if (s == null) {
-            return;
-        }
-        String error = validate(s);
-        if (error != null) {
-            LOG.warning("Rejected message on " + topic + ": " + error + ": " + payload);
-            return;
-        }
-        // The birth and last-will messages have no site id, so it always comes from the topic.
-        String siteId = topic.split("/")[1];
-        db.getCollection("gateways").updateOne(
-                Filters.eq("_id", siteId),
-                new Document("$set", s.toDocument()),
-                new UpdateOptions().upsert(true));
-    }
-
-    /** Returns the parsed payload, or null after logging if it is not valid JSON for that type. */
-    private <T> T parse(String topic, String payload, Class<T> type) {
-        try {
-            return jsonb.fromJson(payload, type);
-        } catch (RuntimeException e) {
-            LOG.warning("Rejected message on " + topic + ": invalid JSON: " + payload);
-            return null;
-        }
+    public void messageArrived(String topic, MqttMessage message) throws Exception {
+        // Never acknowledge before the durable boundary. A queue failure escapes
+        // deliberately: Paho disconnects and QoS 1 is redelivered on reconnect.
+        ingestion.accept(topic, new String(message.getPayload(), StandardCharsets.UTF_8));
+        client.messageArrivedComplete(message.getId(), message.getQos());
     }
 
     /** Returns why the reading must be rejected, or null if it is valid. */
-    static String validate(Measurement m) {
+    public static String validate(Measurement m) {
         if (m == null) return "empty payload";
         if (m.getV() == null) return "missing v";
         if (m.getV() != Measurement.FORMAT_VERSION) return "unsupported format version " + m.getV();
@@ -262,7 +182,7 @@ public class MqttListener implements MqttCallbackExtended {
     }
 
     /** Returns why the status must be rejected, or null if it is valid. */
-    static String validate(GatewayStatus s) {
+    public static String validate(GatewayStatus s) {
         if (s == null) return "empty payload";
         if (isBlank(s.getStatus())) return "missing status";
         if (!GATEWAY_STATES.contains(s.getStatus())) return "unknown status '" + s.getStatus() + "'";
@@ -296,11 +216,6 @@ public class MqttListener implements MqttCallbackExtended {
             } catch (MqttException e) {
                 LOG.log(Level.FINE, "MQTT shutdown error", e);
             }
-        }
-        try {
-            jsonb.close();
-        } catch (Exception ignored) {
-            // nothing to do
         }
     }
 

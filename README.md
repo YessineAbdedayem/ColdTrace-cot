@@ -20,6 +20,9 @@ Deux applications clientes sont prévues :
 
 ## Technologies
 
+La [Phase A : ingestion fiable et API métier](docs/PHASE-A-INGESTION-AND-API.md) documente la file durable,
+les API sites/capteurs/seuils et les 14 scénarios de test virtuels avec injection de pannes.
+
 **Un seul WildFly 42** sert tout ColdTrace, avec un hôte virtuel par nom, configuré par les scripts du cours
 (`default-host.cli`, `add-host.cli`, `add-api.cli`) et un fichier `.properties` par environnement
 ([middleware/wildfly](middleware/wildfly/README.md)) :

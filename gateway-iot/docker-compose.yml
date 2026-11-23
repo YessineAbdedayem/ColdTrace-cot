@@ -69,6 +69,7 @@ services:
       CLOUD_GATEWAY_PASSWORD: ${CLOUD_GATEWAY_PASSWORD}
       BUFFER_MAX: ${BUFFER_MAX}
       REPLAY_BATCH: ${REPLAY_BATCH}
+      MEASUREMENT_FUTURE_SECONDS: ${MEASUREMENT_FUTURE_SECONDS:-30}
     volumes:
       - ./node-red:/data                       # flows.json, settings.js, saved buffer
       # only the CA certificate, never the keys
@@ -145,6 +146,12 @@ services:
       MQTT_USER: ${CLOUD_BACKEND_USER}
       MQTT_PASSWORD: ${CLOUD_BACKEND_PASSWORD}
       MQTT_CA_PATH: /certs/ca.crt
+      INGESTION_DIR: /ingestion
+      SENSOR_FRESH_SECONDS: ${SENSOR_FRESH_SECONDS:-30}
+      SENSOR_OFFLINE_SECONDS: ${SENSOR_OFFLINE_SECONDS:-60}
+      MEASUREMENT_FUTURE_SECONDS: ${MEASUREMENT_FUTURE_SECONDS:-30}
+      INGESTION_MAX_FILES: ${INGESTION_MAX_FILES:-20000}
+      INGESTION_MAX_BYTES: ${INGESTION_MAX_BYTES:-268435456}
       # Dev only: lets the Front Office trigger simulator faults through the API
       SIM_CONTROL_URL: http://simulator:${SIM_CONTROL_PORT:-4000}
       # Early warnings from the model API of mlops/ (optional: started from mlops/, same network).
@@ -165,6 +172,7 @@ services:
       - { type: bind, source: ./certs/ca.crt, target: /certs/ca.crt, read_only: true, bind: { create_host_path: false } }
       - { type: bind, source: ./certs/web.p12, target: /certs/web.p12, read_only: true, bind: { create_host_path: false } }
       - iam-keys:/keys          # the token signing keys: kept across restarts, never in git
+      - ingestion-data:/ingestion # fsynced MQTT inbox; survives MongoDB outages and container replacement
     networks:
       default:
         aliases: [coldtrace.test, www.coldtrace.test, api.coldtrace.test, iam.coldtrace.test, admin.coldtrace.test]
@@ -193,3 +201,4 @@ volumes:
   cloud-data:
   mongo-data:
   iam-keys:
+  ingestion-data:

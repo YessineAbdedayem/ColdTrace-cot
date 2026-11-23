@@ -1,6 +1,7 @@
 package tn.supcom.coldtrace.db;
 
 import com.mongodb.ConnectionString;
+import com.mongodb.WriteConcern;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import com.mongodb.client.MongoCollection;
@@ -54,13 +55,27 @@ public class MongoProducer {
     /** Runs before the MQTT listener (lower priority value = earlier). */
     void onStartup(@Observes @Priority(1) Startup event) {
         try {
+            ensureReady();
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "Could not prepare MongoDB (is MongoDB reachable?)", e);
+        }
+    }
+
+    /** Also called by ingestion after an outage; failures must keep events pending. */
+    public void ensureReady() {
             // Same names and keys as gateway-iot/mongo/init-app-user.sh, so both can run on one database.
             MongoCollection<Document> measurements = database().getCollection("measurements");
-            measurements.createIndex(Indexes.ascending("msgId"),
+            boolean uniqueMessageId = false;
+            try { for (Document index : measurements.listIndexes()) {
+                if (new Document("msgId", 1).equals(index.get("key")) && Boolean.TRUE.equals(index.get("unique"))) uniqueMessageId = true;
+            } } catch (com.mongodb.MongoCommandException e) { if (e.getErrorCode() != 26) throw e; }
+            if (!uniqueMessageId) measurements.createIndex(Indexes.ascending("msgId"),
                     new IndexOptions().unique(true).name("msgId_unique"));
             measurements.createIndex(
                     Indexes.compoundIndex(Indexes.ascending("siteId", "sensorId"), Indexes.descending("ts")),
                     new IndexOptions().name("site_sensor_ts"));
+            measurements.createIndex(Indexes.compoundIndex(Indexes.ascending("sensorId"), Indexes.descending("ts")),
+                    new IndexOptions().name("sensor_ts"));
             LOG.info("MongoDB ready, measurements indexes ensured");
 
             // At most one open incident per sensor and metric.
@@ -70,9 +85,6 @@ public class MongoProducer {
                             .partialFilterExpression(Filters.eq("status", Incident.OPEN)));
             insertMissingThresholds();
             LOG.info("Alert indexes and default thresholds ensured");
-        } catch (RuntimeException e) {
-            LOG.log(Level.WARNING, "Could not prepare MongoDB (is MongoDB reachable?)", e);
-        }
     }
 
     /** Adds the default limits only for profiles that have none, so later edits are kept. */
@@ -90,7 +102,7 @@ public class MongoProducer {
 
     @Produces
     public MongoDatabase database() {
-        return client.getDatabase(dbName);
+        return client.getDatabase(dbName).withWriteConcern(WriteConcern.JOURNALED);
     }
 
     @PreDestroy

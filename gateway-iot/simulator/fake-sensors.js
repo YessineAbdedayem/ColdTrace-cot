@@ -10,6 +10,7 @@
 //   SIM_CONTROL_PORT 4000   localhost-only HTTP fault API
 
 const http = require("node:http");
+const { randomUUID } = require("node:crypto");
 const sensorConfigs = require("./sensors.json");
 
 const PROFILES = {
@@ -219,15 +220,20 @@ function startSimulator() {
     client.on("connect", () => console.log(`connected to ${brokerUrl}, sensors: ${sensors.length}`));
     client.on("error", error => console.error("mqtt error:", error.message));
 
+    const bootId = randomUUID();
+    const sequences = new Map();
     setInterval(() => {
         if (!client.connected) return;
         for (const sensor of sensors) {
             if (!shouldPublish(sensor)) continue;
             const topic = `coldtrace/${sensor.siteId}/${sensor.sensorId}/telemetry`;
             const bad = Math.random() < badRate;
+            const seq = (sequences.get(sensor.sensorId) || 0) + 1;
+            sequences.set(sensor.sensorId, seq);
             const payload = bad
                 ? BAD[Math.floor(Math.random() * BAD.length)]()
-                : JSON.stringify(nextReading(sensor, { randomDoor }));
+                : JSON.stringify({ ...nextReading(sensor, { randomDoor }),
+                    msgId: `${sensor.siteId}-${sensor.sensorId}-${bootId}-${seq}`, seq });
             client.publish(topic, payload, { qos: 1 }, error => {
                 if (error) console.error(`publish error for ${topic}:`, error.message);
             });

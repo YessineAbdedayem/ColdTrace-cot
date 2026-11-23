@@ -59,6 +59,8 @@ public class AlertEngine {
 
     @Inject
     AlertBroadcaster broadcaster;
+    @Inject
+    tn.supcom.coldtrace.business.Catalog catalog;
 
     @Resource
     ManagedScheduledExecutorService scheduler;
@@ -79,6 +81,8 @@ public class AlertEngine {
     }
 
     public void process(Measurement m) {
+        Document configured = db.getCollection("sensors").find(Filters.eq("_id", m.getSensorId())).first();
+        if (configured == null || !catalog.enabled(configured)) return;
         Date readingTime = Date.from(Instant.parse(m.getTs()));
         // Any reading means the sensor is talking again.
         close(openIncident(m.getSensorId(), SILENCE), readingTime);
@@ -92,7 +96,7 @@ public class AlertEngine {
             evaluate(m, "door", AlertRules.doorValue(m.getDoorOpen()), null, AlertRules.DOOR_MAX);
         }
         Sensor sensor = Sensor.fromDocument(sensorDoc);
-        Document thresholdDoc = db.getCollection("thresholds").find(Filters.eq("_id", sensor.getProfile())).first();
+        Document thresholdDoc = catalog.threshold(sensorDoc);
         if (thresholdDoc == null) {
             warnOnce("profile:" + sensor.getProfile(),
                     "No thresholds for profile '" + sensor.getProfile() + "' of sensor " + m.getSensorId());
@@ -110,17 +114,19 @@ public class AlertEngine {
         MongoCollection<Document> incidents = db.getCollection("incidents");
         Bson openIncident = openIncident(m.getSensorId(), metric);
         Document current = incidents.find(openIncident).first();
+        if (current != null && m.getMsgId().equals(current.getString("lastEventId"))) return;
         boolean breached = AlertRules.isBreached(value, min, max);
         int inRange = current == null ? 0 : current.getInteger("inRangeReadings", 0);
         Date readingTime = Date.from(Instant.parse(m.getTs()));
 
         switch (AlertRules.decide(current != null, breached, inRange)) {
             case NONE -> { }
-            case OPEN -> open(m.getSiteId(), m.getSensorId(), metric, value, min, max, readingTime);
+            case OPEN -> open(m.getSiteId(), m.getSensorId(), metric, value, min, max, readingTime, m.getMsgId());
             case STILL_BREACHED -> incidents.updateOne(openIncident, Updates.combine(
+                    Updates.set("lastEventId", m.getMsgId()),
                     Updates.set("inRangeReadings", 0),
                     AlertRules.isAbove(value, max) ? Updates.max("peakValue", value) : Updates.min("peakValue", value)));
-            case RECOVERING -> incidents.updateOne(openIncident, Updates.inc("inRangeReadings", 1));
+            case RECOVERING -> incidents.updateOne(openIncident, Updates.combine(Updates.inc("inRangeReadings", 1), Updates.set("lastEventId", m.getMsgId())));
             case CLOSE -> close(openIncident, readingTime);
         }
     }
@@ -133,20 +139,23 @@ public class AlertEngine {
         try {
             Instant now = Instant.now();
             for (Document sensor : db.getCollection("sensors").find()) {
+                if (!catalog.enabled(sensor)) continue;
                 String sensorId = sensor.getString("_id");
-                Document last = db.getCollection("measurements").find(Filters.eq("sensorId", sensorId))
+                Document last = db.getCollection("measurements").find(Filters.and(Filters.eq("sensorId", sensorId),
+                                Filters.eq("siteId", sensor.getString("siteId")), Filters.ne("liveEligible", false), Filters.ne("replayed", true),
+                                Filters.lte("ts", Date.from(now.plusSeconds(tn.supcom.coldtrace.ingestion.MeasurementPolicy.FUTURE_SECONDS)))))
                         .sort(Sorts.descending("ts")).limit(1).first();
                 if (last == null || last.getDate("ts") == null) {
                     continue; // never heard from: not installed yet rather than silent
                 }
                 long silentFor = Duration.between(last.getDate("ts").toInstant(), now).getSeconds();
-                if (!AlertRules.isSilent(silentFor)) {
+                if (silentFor <= tn.supcom.coldtrace.ingestion.MeasurementPolicy.OFFLINE_SECONDS) {
                     continue;
                 }
                 Bson openIncident = openIncident(sensorId, SILENCE);
                 if (db.getCollection("incidents").find(openIncident).first() == null) {
                     open(sensor.getString("siteId"), sensorId, SILENCE, silentFor,
-                            null, (double) AlertRules.SILENT_AFTER_SECONDS, Date.from(now));
+                            null, (double) tn.supcom.coldtrace.ingestion.MeasurementPolicy.OFFLINE_SECONDS, Date.from(now));
                 } else {
                     db.getCollection("incidents").updateOne(openIncident, Updates.max("peakValue", (double) silentFor));
                 }
@@ -238,7 +247,14 @@ public class AlertEngine {
 
     private void open(String siteId, String sensorId, String metric, double value, Double min, Double max,
                       Date openedAt) {
-        if (insertAndBroadcast(Incident.newOpenDocument(siteId, sensorId, metric, value, min, max, openedAt))
+        open(siteId, sensorId, metric, value, min, max, openedAt, null);
+    }
+
+    private void open(String siteId, String sensorId, String metric, double value, Double min, Double max,
+                      Date openedAt, String eventId) {
+        Document incident = Incident.newOpenDocument(siteId, sensorId, metric, value, min, max, openedAt);
+        if (eventId != null) incident.put("lastEventId", eventId);
+        if (insertAndBroadcast(incident)
                 && "temperature".equals(metric)) {
             // The real alert replaces the early warning that announced it.
             close(openIncident(sensorId, EARLY_WARNING), openedAt, CLOSED_REPLACED);

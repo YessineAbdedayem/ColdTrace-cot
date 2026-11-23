@@ -111,3 +111,59 @@ def test_a_broken_prediction_log_never_fails_the_forecast():
 def test_no_model_means_503():
     service.state.model = None
     assert TestClient(service.app).post("/predict", json={"sensorId": "S01", "readings": []}).status_code == 503
+
+
+@pytest.mark.parametrize("override,expected", [(None, 6.0), ("freezer", -18.0)])
+def test_forecast_resolves_site_profile_and_sensor_override(monkeypatch, override, expected):
+    sensor = {"_id": "V01", "siteId": "virtual"}
+    if override:
+        sensor["profile"] = override
+    docs = readings().to_dict("records")
+    saved = []
+
+    class Collection:
+        def __init__(self, name):
+            self.name = name
+
+        def find_one(self, query):
+            return {"sensors": sensor, "sites": {"defaultProfile": "custom"},
+                    "thresholds": {"temperatureMax": expected}}[self.name]
+
+        def find(self, query, projection):
+            assert query["siteId"] == "virtual" and query["sensorId"] == "V01"
+            return self
+
+        def sort(self, *args):
+            return docs
+
+    class Database:
+        def __getitem__(self, name):
+            return Collection(name)
+
+    class Log:
+        def save(self, *args):
+            saved.append(args)
+
+    monkeypatch.setattr(service, "platform_db", Database)
+    monkeypatch.setattr(service, "prediction_log", Log)
+    service.state.model, service.state.margin, service.state.version = FollowTrend(), 0.0, "7"
+    response = TestClient(service.app).get("/forecast/V01")
+    assert response.status_code == 200, response.text
+    assert response.json()["limitMax"] == expected
+    assert saved[0][1]["profile"] == (override or "custom")
+    assert list(saved[0][-1]) == FEATURES
+
+
+@pytest.mark.parametrize("disabled", ["sensors", "sites"])
+def test_forecast_refuses_disabled_business_entities(monkeypatch, disabled):
+    class Database:
+        def __getitem__(self, name):
+            self.name = name
+            return self
+
+        def find_one(self, query):
+            return {"_id": "V01", "siteId": "virtual", "active": self.name != disabled}
+
+    monkeypatch.setattr(service, "platform_db", Database)
+    service.state.model, service.state.margin, service.state.version = FollowTrend(), 0.0, "7"
+    assert TestClient(service.app).get("/forecast/V01").status_code == 422

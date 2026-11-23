@@ -2,7 +2,7 @@ batch
 set pathTo=`:resolve-expression(expression=${default.path})`
 set aliasTo=`:resolve-expression(expression=${default.aliases})`
 set spaPath=`:resolve-expression(expression=${default.path}/index.html)`
-set corsRegex=`:resolve-expression(expression="regex(pattern='^(https:\\/\\/(?:.+\\.)?${default.domains}(?::\\d{1,5})?(\\/([a-zA-Z0-9\\-_?&=%.;:+]{2,})?)*)$',value=%{i,Origin},full-match=true)"`
+set corsRegex=`:resolve-expression(expression="regex(pattern='^(https:\\/\\/(?:.+\\.)?${default.domains}(?::[0-9]{1,5})?(\\/([a-zA-Z0-9\\-_?&=%.;:+]{2,})?)*)$',value=%{i,Origin},full-match=true)"`
 set escaped=\"$corsRegex\"
 /subsystem=undertow/configuration=handler/file=welcome-content:write-attribute(name=path,value=$pathTo)
 /subsystem=undertow/server=default-server/host=default-host:write-attribute(name=alias,value=[$aliasTo])

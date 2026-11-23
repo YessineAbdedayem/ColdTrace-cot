@@ -277,7 +277,8 @@ function updateTile(sensor) {
 
   const alarm = metricOpen("temperature") || metricOpen("humidity");
   const door = metricOpen("door") || r.doorOpen === true;
-  const silent = metricOpen("silence") || silentFor > SILENT_AFTER_S;
+  const silent = metricOpen("silence") || silentFor > SILENT_AFTER_S ||
+    (sensor.status && sensor.status !== "online");
   // the model predicts the limit will be crossed; the real alert replaces it
   const forecast = metricOpen("early_warning") && !alarm;
   t.el.classList.toggle("alarm", alarm);
@@ -285,7 +286,8 @@ function updateTile(sensor) {
   t.el.classList.toggle("silent", silent);
   t.el.classList.toggle("forecast", forecast);
   t.flag.textContent = alarm ? "Out of range" : silent ? "No signal" : forecast ? "Early warning"
-    : door ? "Door open" : r.replayed ? "replayed" : "";
+    : door ? "Door open" : sensor.status && sensor.status !== "online" ? sensor.status
+      : r.replayed ? "replayed" : "";
 
   // a fresh reading makes the tile breathe once
   if (r.ts && t.lastTs && r.ts !== t.lastTs && t.el.classList.contains("settled")) {

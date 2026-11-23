@@ -1,7 +1,7 @@
 set pathTo=`:resolve-expression(expression=${api.name}-${api.version}.war)`
 set aliasTo=`:resolve-expression(expression=${api.aliases})`
 set logPrefix=`:resolve-expression(expression=${api.context}-${api.name})`
-set corsRegex=`:resolve-expression(expression="regex(pattern='^(https:\\/\\/(?:.+\\.)?${api.domains}(?::\\d{1,5})?(\\/([a-zA-Z0-9\\-_?&=%.;:+]{2,})?)*)$',value=%{i,Origin},full-match=true)")`
+set corsRegex=`:resolve-expression(expression="regex(pattern='^(https:\\/\\/(?:.+\\.)?${api.domains}(?::[0-9]{1,5})?(\\/([a-zA-Z0-9\\-_?&=%.;:+]{2,})?)*)$',value=%{i,Origin},full-match=true)")`
 set escaped=\"$corsRegex\"
 if (outcome != success) of /subsystem=undertow/server=default-server/host=${api.name}-host:read-resource
     echo ">>> Initializing module infrastructure for: ${api.name}"

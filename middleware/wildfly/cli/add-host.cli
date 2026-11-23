@@ -3,7 +3,7 @@ set pathTo=`:resolve-expression(expression=${host.path})`
 set aliasTo=`:resolve-expression(expression=${host.aliases})`
 set contentTo=`:resolve-expression(expression=${host.key}-content)`
 set spaPath=`:resolve-expression(expression=${host.path}/index.html)`
-set corsRegex=`:resolve-expression(expression="regex(pattern='^(https:\\/\\/(?:.+\\.)?${host.domains}(?::\\d{1,5})?(\\/([a-zA-Z0-9\\-_?&=%.;:+]{2,})?)*)$',value=%{i,Origin},full-match=true)"`
+set corsRegex=`:resolve-expression(expression="regex(pattern='^(https:\\/\\/(?:.+\\.)?${host.domains}(?::[0-9]{1,5})?(\\/([a-zA-Z0-9\\-_?&=%.;:+]{2,})?)*)$',value=%{i,Origin},full-match=true)"`
 set escaped=\"$corsRegex\"
 /subsystem=undertow/configuration=handler/file=${host.key}-content:add(path=$pathTo)
 /subsystem=undertow/server=default-server/host=${host.key}-host:add(alias=[$aliasTo])

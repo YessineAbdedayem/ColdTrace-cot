@@ -42,6 +42,8 @@ public class EarlyWarningPoller {
 
     @Inject
     AlertEngine engine;
+    @Inject
+    tn.supcom.coldtrace.ingestion.SensorState states;
 
     @Resource
     ManagedScheduledExecutorService scheduler;
@@ -80,6 +82,7 @@ public class EarlyWarningPoller {
         roundProblem = null;
         try {
             for (Document sensor : db.getCollection("sensors").find()) {
+                if (!"online".equals(states.status(sensor, states.latest(sensor)))) continue;
                 if (!poll(sensor.getString("_id"), sensor.getString("siteId"))) {
                     break; // model API unreachable or not ready: no point asking for the other sensors
                 }

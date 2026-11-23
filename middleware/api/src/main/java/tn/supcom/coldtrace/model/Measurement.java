@@ -26,6 +26,8 @@ public class Measurement {
     private Boolean doorOpen;
     private String receivedAt;
     private Boolean replayed;
+    private Long seq;
+    private String identitySource;
 
     public Measurement() {
     }
@@ -46,6 +48,8 @@ public class Measurement {
             doc.append("receivedAt", Date.from(Instant.parse(receivedAt)));
         }
         appendIfPresent(doc, "replayed", replayed);
+        appendIfPresent(doc, "seq", seq);
+        appendIfPresent(doc, "identitySource", identitySource);
         return doc;
     }
 
@@ -63,6 +67,8 @@ public class Measurement {
         m.doorOpen = doc.getBoolean("doorOpen");
         m.receivedAt = isoOrNull(doc.getDate("receivedAt"));
         m.replayed = doc.getBoolean("replayed");
+        m.seq = doc.get("seq") instanceof Number n ? n.longValue() : null;
+        m.identitySource = doc.getString("identitySource");
         return m;
     }
 
@@ -104,4 +110,8 @@ public class Measurement {
     public void setReceivedAt(String receivedAt) { this.receivedAt = receivedAt; }
     public Boolean getReplayed() { return replayed; }
     public void setReplayed(Boolean replayed) { this.replayed = replayed; }
+    public Long getSeq() { return seq; }
+    public void setSeq(Long seq) { this.seq = seq; }
+    public String getIdentitySource() { return identitySource; }
+    public void setIdentitySource(String identitySource) { this.identitySource = identitySource; }
 }

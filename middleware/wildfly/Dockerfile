@@ -47,7 +47,7 @@ COPY --from=iam /build/target/coldtrace-iam.war /opt/jboss/wildfly/standalone/de
 
 # The IAM's token signing keys live in /keys (a Docker volume); the TLS keystore is mounted in /certs.
 USER root
-RUN mkdir -p /keys /certs && chown jboss:jboss /keys
+RUN mkdir -p /keys /certs /ingestion && chown jboss:jboss /keys /ingestion
 USER jboss
 
 # Listen on the standard ports, so the course scripts' "port 80 -> https" redirect and "port 443 -> HSTS" filters

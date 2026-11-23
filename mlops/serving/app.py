@@ -173,7 +173,10 @@ def forecast_sensor(sensor_id: str):
     sensor = db["sensors"].find_one({"_id": sensor_id})
     if sensor is None:
         raise HTTPException(404, f"unknown sensor {sensor_id}")
-    profile = sensor.get("profile") or "cold"
+    site = db["sites"].find_one({"_id": sensor.get("siteId")}) or {}
+    if sensor.get("active") is False or site.get("active") is False:
+        raise HTTPException(422, "sensor or site is disabled")
+    profile = sensor.get("profile") or site.get("defaultProfile") or "cold"
     threshold = db["thresholds"].find_one({"_id": profile}) or {}
     limit = threshold.get("temperatureMax")
     limit = float(limit) if limit is not None else DEFAULT_LIMITS.get(profile, 4.0)

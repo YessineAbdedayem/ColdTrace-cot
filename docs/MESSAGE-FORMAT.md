@@ -1,8 +1,11 @@
-# Message format and topics (DRAFT, to agree in the team call)
+# Message format and topics
 
-Nothing here is final. It is a starting point so the gateway, the backend
-and the ESP32 code all speak the same language. Change it together, then
-update the gateway's "Check and clean" node.
+The original examples below remain useful for legacy sensor compatibility. The implemented v1 rules,
+stable event identity, timestamp handling, deduplication and live/history policies are documented in
+[Phase A — MQTT contract](PHASE-A-INGESTION-AND-API.md#contrat-mqtt-v1).
+For new devices, supply a stable `msgId` and optionally `seq`; the gateway preserves them.
+The old timestamp-derived identifier is a compatibility fallback, not a reliable unique device event ID.
+Valid delayed timestamps are preserved; they are no longer replaced merely because they are old.
 
 ## Topics
 
